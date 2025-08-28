@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/fast-xml-parser@4.5.0/dist/browser/fast-xml-parser.min.js"></script>
 <style>
 :root{--bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;--accent:#3d6317;--accent-2:#24468E;--border:rgba(255,255,255,.12);--shadow:0 10px 25px rgba(0,0,0,.35)}
 @media (prefers-color-scheme: light){:root{--bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;--accent:#3d6317;--accent-2:#24468E;--border:rgba(10,12,16,.08);--shadow:0 10px 25px rgba(10,12,16,.08)}}
@@ -80,10 +79,9 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  // ==== Utilities & safe globals ====
-  const XMLParserCtor = (window.fxp && window.fxp.XMLParser) || window.XMLParser;
   const monday = mondaySdk();
 
+  // ====== Your mapping rules (unchanged) ======
   const mapping={
     "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
     "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
@@ -92,13 +90,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let ctx=null,itemId=null,boardId=null,rawFields=null,updates=null,assetUrl=null,pendingName=null;
 
+  // ====== UI helpers ======
   function setMsg(t){document.getElementById("msg").innerText=t||""}
   function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
-
-  function withTimeout(promise,ms,label){
-    let t; const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});
-    return Promise.race([promise,timeout]).finally(()=>clearTimeout(t));
-  }
+  function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
   function normText(s){return (s||"").trim()}
   function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
   function parseTimeToHHMM(s){
@@ -112,49 +107,13 @@ document.addEventListener("DOMContentLoaded", () => {
     return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")
   }
 
-  function xmlGetText(node){
-    if(node==null) return "";
-    if(typeof node==="string") return node;
-    if(Array.isArray(node)) return node.map(xmlGetText).join("");
-    let out="";
-    for(const k in node){
-      if(k==="w:t"||k==="t") out+=xmlGetText(node[k]);
-      else if(k==="w:r"||k==="r"||k==="w:p"||k==="p"||k==="w:br"||k==="br") out+=xmlGetText(node[k]);
-      else if(typeof node[k]==="object") out+=xmlGetText(node[k]);
-    }
-    return out;
-  }
-
-  function extractSdt(documentXml){
-    if(!XMLParserCtor){ throw new Error("XML parser not available (fast-xml-parser)") }
-    const parser=new XMLParserCtor({ignoreAttributes:false,attributeNamePrefix:"",removeNSPrefix:true,allowBooleanAttributes:true,trimValues:false});
-    const j=parser.parse(documentXml);
-    const body=((j||{}).document||{}).body;
-    const sdts=[];
-    (function walk(n){
-      if(!n||typeof n!=="object")return;
-      if(n.sdt){const a=n.sdt; Array.isArray(a)?a.forEach(x=>sdts.push(x)):sdts.push(a)}
-      for(const k in n){ if(n[k]&&typeof n[k]==="object") walk(n[k]) }
-    })(body);
-    const out={};
-    sdts.forEach(s=>{
-      const pr=s.sdtPr||{};
-      let tag=null;
-      if(pr.tag && pr.tag.val) tag=pr.tag.val;
-      if(!tag && pr.alias && pr.alias.val) tag=pr.alias.val;
-      const val=xmlGetText(s.sdtContent);
-      if(tag) out[tag]=normText(val);
-    });
-    return out;
-  }
-
+  // ====== DOCX → XML helpers ======
   async function parseDocxArrayBuffer(ab){
     const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
     const f=zip.file("word/document.xml");
     if(!f) throw new Error("word/document.xml not found (is this a valid .docx?)");
     return await withTimeout(f.async("string"),8000,"Reading document.xml");
   }
-
   async function fetchDoc(url){
     const res=await withTimeout(fetch(url),10000,"Fetching asset");
     if(!res.ok) throw new Error("HTTP "+res.status);
@@ -162,20 +121,68 @@ document.addEventListener("DOMContentLoaded", () => {
     return await parseDocxArrayBuffer(ab);
   }
 
+  // ====== XML extraction with DOMParser (no external libs) ======
+  function textFromNode(node){
+    // gather text from this node's subtree
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+    let t="", curr;
+    while((curr=walker.nextNode())) t += curr.nodeValue;
+    return t;
+  }
+
+  function extractSdtWithDOM(documentXml){
+    const dom = new DOMParser().parseFromString(documentXml, "application/xml");
+    // Parser errors?
+    if(dom.getElementsByTagName("parsererror").length){
+      throw new Error("XML parsererror in document.xml");
+    }
+    // Find all content controls: elements with localName === 'sdt'
+    const all = dom.getElementsByTagName("*");
+    const out = {};
+    for(let i=0;i<all.length;i++){
+      const el = all[i];
+      if(el.localName !== "sdt") continue;
+
+      // Find sdtPr descendant
+      let pr = null, content = null;
+      for(let j=0;j<el.childNodes.length;j++){
+        const ch = el.childNodes[j];
+        if(ch.nodeType===1 && ch.localName==="sdtPr") pr = ch;
+        if(ch.nodeType===1 && ch.localName==="sdtContent") content = ch;
+      }
+      if(!pr || !content) continue;
+
+      // Tag can be in <w:tag w:val="..."> or <tag val="...">
+      let tag = null;
+      const tags = pr.getElementsByTagName("*");
+      for(let k=0;k<tags.length;k++){
+        const t = tags[k];
+        if(t.localName==="tag" || t.localName==="alias"){
+          tag = t.getAttribute("w:val") || t.getAttribute("val");
+          if(tag) break;
+        }
+      }
+      if(!tag) continue;
+
+      const value = normText(textFromNode(content));
+      out[tag] = value;
+    }
+    return out;
+  }
+
+  // ====== Business logic ======
   function previewFields(fields){
     const el=document.getElementById("preview");
     const keys=Object.keys(fields||{}).sort();
     if(!keys.length){el.classList.add("kv-empty");el.innerHTML="No fields extracted yet.";return}
     el.classList.remove("kv-empty");
-    el.innerHTML=keys.map(k=>`<div class="row"><div class="key">${k}</div><div class="val">${fields[k]||""}</div></div>`).join("")
+    el.innerHTML=keys.map(k=>`<div class="row"><div class="key">${k}</div><div class="val">${fields[k]||""}</div></div>`).join("");
   }
-
   function buildTitle(fields){
     const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
     const parts=[a,b,c].filter(Boolean);
     return parts.length? parts.join(" ") : null;
   }
-
   function mapGroupToStatusLabel(v){
     if(!v) return null;
     const s=String(v).trim();
@@ -185,17 +192,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if(/^Major/i.test(s)) return "MAJ";
     return null;
   }
-
   async function buildUpdates(fields){
     const vals={};
     pendingName = buildTitle(fields) || null;
 
-    // date6: always set date; add time only if present
-    const rawDate=normText(fields.Due_Date);
-    const rawTime=normText(fields.Due_Time);
-    const dateIso=normDate(rawDate);
-    const hhmm=parseTimeToHHMM(rawTime);
-    if(dateIso){ vals["date6"]= hhmm? {"date":dateIso,"time":hhmm} : {"date":dateIso}; }
+    // date6: always set date; include time if provided
+    const dateIso = normDate(normText(fields.Due_Date));
+    const hhmm = parseTimeToHHMM(normText(fields.Due_Time));
+    if(dateIso){ vals["date6"] = hhmm ? {"date":dateIso,"time":hhmm} : {"date":dateIso}; }
 
     // status06 from Group mapping
     const mappedStatus=mapGroupToStatusLabel(fields.Group);
@@ -213,7 +217,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     return vals;
   }
-
   async function applyToMonday(vals){
     const s=JSON.stringify(vals).replace(/"/g,'\\"');
     const m=`mutation($bid:Int!,$iid:Int!){change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:"${s}"){id}}`;
@@ -229,11 +232,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ==== Monday context/theme ====
+  // ====== Monday context/theme ======
   monday.listen("context",(res)=>{ctx=res.data||{};itemId=ctx.itemId;boardId=ctx.boardId;document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
   monday.listen("theme",(res)=>{const theme=res.data?.theme||"auto";document.getElementById("theme-pill").innerText=`Theme: ${theme}`});
 
-  // ==== UI bindings ====
+  // ====== UI bindings ======
   const dz=document.getElementById("dropzone"), fi=document.getElementById("fileinput");
   document.getElementById("choose").onclick=()=>fi.click();
   fi.addEventListener("change",e=>{
@@ -256,14 +259,14 @@ document.addEventListener("DOMContentLoaded", () => {
     try{ await applyToMonday(updates||{}); setMsg("Done") } catch(e){ showErr(e,"Update failed") }
   };
 
-  // ==== Flows ====
+  // ====== Flows ======
   async function handleLocalFile(file){
     try{
       setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
       const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");
       const xml=await parseDocxArrayBuffer(ab);
       setMsg("Parsing fields…");
-      rawFields=extractSdt(xml);
+      rawFields=extractSdtWithDOM(xml);
       previewFields(rawFields);
       updates=await buildUpdates(rawFields);
       document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0 && !buildTitle(rawFields));
@@ -287,7 +290,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setMsg("Reading .docx…");
       const xml=await fetchDoc(assetUrl);
       setMsg("Parsing fields…");
-      rawFields=extractSdt(xml);
+      rawFields=extractSdtWithDOM(xml);
       previewFields(rawFields);
       updates=await buildUpdates(rawFields);
       document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0 && !buildTitle(rawFields));
@@ -295,7 +298,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }catch(e){ showErr(e,"Attachment error") }
   }
 
-  // surface any unexpected global errors
+  // Surface unexpected global errors
   window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
 });
 </script>
