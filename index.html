@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parse Form</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<style>
+body{font-family:Inter,system-ui,Arial,sans-serif;margin:16px}
+h1{font-size:18px;margin:0 0 12px}
+button{padding:8px 12px;border:0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.1);cursor:pointer}
+#preview{margin-top:12px;border:1px solid #eee;border-radius:12px;padding:12px;max-height:320px;overflow:auto}
+.row{display:flex;gap:8px;align-items:center;margin:6px 0}
+.key{min-width:160px;font-weight:600}
+.val{flex:1}
+.status{margin-left:8px;font-size:12px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fast-xml-parser@4.5.0/dist/browser/fast-xml-parser.min.js"></script>
+</head>
+<body>
+<h1>Extract form → fill columns</h1>
+<div>
+<button id="extract">Extract from attachment</button>
+<button id="apply" disabled>Apply to item</button>
+<span id="msg" class="status"></span>
+</div>
+<div id="preview"></div>
+<script>
+const mapping={"ProjectName":{"type":"text","columnId":"project_name"},"Client":{"type":"text","columnId":"client"},"DueDate":{"type":"date","columnId":"due_date"},"BDOwner":{"type":"people","columnId":"bd_owner"},"Sector":{"type":"dropdown","columnId":"sector","options":{"Life Sciences":"Life Sciences","Higher Ed":"Higher Ed","Manufacturing":"Manufacturing"}},"EstValue":{"type":"numbers","columnId":"est_value"},"Priority":{"type":"status","columnId":"priority","options":{"High":"High","Medium":"Medium","Low":"Low"}}};
+const peopleDirectory={"Jane Smith":"12345678","john.doe@yourco.com":"98765432"};
+const monday=mondaySdk();
+let ctx=null,itemId=null,boardId=null,rawFields=null,updates=null,assetUrl=null;
+
+function setMsg(t){document.getElementById("msg").innerText=t||""}
+function normText(s){return (s||"").trim()}
+function normDate(s){if(!s)return null;const d=new Date(s);if(isNaN(d))return null;return d.toISOString().slice(0,10)}
+function toNumber(s){if(s==null)return null;const n=Number(String(s).replace(/[^0-9.\-]/g,""));return isNaN(n)?null:n}
+
+function xmlGetText(node){
+  if(node==null)return "";
+  if(typeof node==="string")return node;
+  if(Array.isArray(node))return node.map(xmlGetText).join("");
+  let out="";
+  for(const k in node){
+    if(k==="w:t"||k==="t") out+=xmlGetText(node[k]);
+    else if(k==="w:r"||k==="r"||k==="w:p"||k==="p"||k==="w:br"||k==="br") out+=xmlGetText(node[k]);
+    else if(typeof node[k]==="object") out+=xmlGetText(node[k]);
+  }
+  return out;
+}
+
+function extractSdt(doc){
+  const parser=new window.XMLParser({ignoreAttributes:false,attributeNamePrefix:"",removeNSPrefix:true});
+  const j=parser.parse(doc);
+  const body=((j||{}).document||{}).body;
+  const sdts=[];
+  function walk(node){
+    if(!node||typeof node!=="object")return;
+    if(node.sdt){
+      const a=node.sdt;
+      if(Array.isArray(a)) a.forEach(x=>sdts.push(x)); else sdts.push(a);
+    }
+    for(const k in node){if(node[k]&&typeof node[k]==="object")walk(node[k])}
+  }
+  walk(body);
+  const out={};
+  sdts.forEach(s=>{
+    const pr=s.sdtPr||{};
+    let tag=null;
+    if(pr.tag && pr.tag.val) tag=pr.tag.val;
+    if(!tag&&pr.alias&&pr.alias.val) tag=pr.alias.val;
+    const content=s.sdtContent;
+    const val=xmlGetText(content);
+    if(tag) out[tag]=normText(val);
+  });
+  return out;
+}
+
+async function getAssetUrl(){
+  const q=`query($itemIds:[Int!]){items(ids:$itemIds){id name assets{id name public_url}}}`;
+  const r=await monday.api(q,{variables:{itemIds:[itemId]}});
+  const assets=((r||{}).data||{}).items?.[0]?.assets||[];
+  const doc=assets.find(a=>/\.docx$/i.test(a.name))||assets[0];
+  return doc?doc.public_url:null;
+}
+
+async function fetchDoc(url){
+  const res=await fetch(url);
+  const ab=await res.arrayBuffer();
+  const zip=await JSZip.loadAsync(ab);
+  const file=zip.file("word/document.xml");
+  if(!file) return null;
+  return await file.async("string");
+}
+
+function previewFields(fields){
+  const el=document.getElementById("preview");
+  const keys=Object.keys(fields).sort();
+  el.innerHTML=keys.map(k=>`<div class="row"><div class="key">${k}</div><div class="val">${fields[k]||""}</div></div>`).join("")||"(no fields found)";
+}
+
+async function buildUpdates(fields){
+  const vals={};
+  for(const k in mapping){
+    const m=mapping[k];
+    const v=fields[k];
+    if(v==null||v==="") continue;
+    if(m.type==="text"){vals[m.columnId]=v}
+    else if(m.type==="date"){const d=normDate(v); if(d) vals[m.columnId]={date:d}}
+    else if(m.type==="numbers"){const n=toNumber(v); if(n!=null) vals[m.columnId]=String(n)}
+    else if(m.type==="dropdown"){
+      const opt=(m.options&&m.options[v])?m.options[v]:v;
+      vals[m.columnId]={"labels":[opt]}
+    }
+    else if(m.type==="status"){
+      const opt=(m.options&&m.options[v])?m.options[v]:v;
+      vals[m.columnId]={"label":opt}
+    }
+    else if(m.type==="people"){
+      const id=peopleDirectory[v]||peopleDirectory[v?.toLowerCase?.()]||null;
+      if(id) vals[m.columnId]=[{"id":Number(id)}];
+    }
+  }
+  return vals;
+}
+
+async function applyToMonday(vals){
+  const s=JSON.stringify(vals).replace(/"/g,'\\"');
+  const m=`mutation($bid: Int!, $iid: Int!){change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:"${s}"){id}}`;
+  return monday.api(m,{variables:{bid:Number(boardId),iid:Number(itemId)}});
+}
+
+monday.listen("context", async (res)=>{
+  ctx=res.data||{};
+  itemId=ctx.itemId;
+  boardId=ctx.boardId;
+});
+
+document.getElementById("extract").onclick=async()=>{
+  setMsg("Fetching attachment...");
+  assetUrl=await getAssetUrl();
+  if(!assetUrl){setMsg("No attachment found");return}
+  setMsg("Reading .docx...");
+  const xml=await fetchDoc(assetUrl);
+  if(!xml){setMsg("Invalid .docx");return}
+  rawFields=extractSdt(xml);
+  previewFields(rawFields);
+  updates=await buildUpdates(rawFields);
+  document.getElementById("apply").disabled=Object.keys(updates||{}).length===0;
+  setMsg(Object.keys(updates||{}).length? "Ready to apply":"Nothing mappable found");
+};
+
+document.getElementById("apply").onclick=async()=>{
+  if(!updates||!Object.keys(updates).length){setMsg("Nothing to apply");return}
+  setMsg("Updating item...");
+  await applyToMonday(updates);
+  setMsg("Done");
+};
+</script>
+</body>
+</html>
