@@ -79,43 +79,225 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
 </div>
 
 <script>
-const mapping={
-  "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
-  "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
-  "Team_Est":{"type":"text","columnId":"text8"}
-}
+document.addEventListener("DOMContentLoaded", () => {
+  // ==== Utilities & safe globals ====
+  const XMLParserCtor = (window.fxp && window.fxp.XMLParser) || window.XMLParser;
+  const monday = mondaySdk();
 
-const monday=mondaySdk()
-let ctx=null,itemId=null,boardId=null,rawFields=null,updates=null,assetUrl=null,pendingName=null
+  const mapping={
+    "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
+    "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
+    "Team_Est":{"type":"text","columnId":"text8"}
+  };
 
-function setMsg(t){document.getElementById("msg").innerText=t||""}
-function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
-function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
-function normText(s){return (s||"").trim()}
-function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
-function parseTimeToHHMM(s){if(!s)return null;const str=String(s).trim();const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);if(!m){const d=new Date("1970-01-01T"+str);if(!isNaN(d))return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");return null}let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();if(ap==="pm"&&hh<12)hh+=12;if(ap==="am"&&hh===12)hh=0;if(hh<0||hh>23||mm<0||mm>59)return null;return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")}
-function xmlGetText(node){if(node==null)return "";if(typeof node==="string")return node;if(Array.isArray(node))return node.map(xmlGetText).join("");let out="";for(const k in node){if(k==="w:t"||k==="t")out+=xmlGetText(node[k]);else if(k==="w:r"||k==="r"||k==="w:p"||k==="p"||k==="w:br"||k==="br")out+=xmlGetText(node[k]);else if(typeof node[k]==="object")out+=xmlGetText(node[k])}return out}
-function extractSdt(documentXml){const parser=new window.XMLParser({ignoreAttributes:false,attributeNamePrefix:"",removeNSPrefix:true,allowBooleanAttributes:true,trimValues:false});const j=parser.parse(documentXml);const body=((j||{}).document||{}).body;const sdts=[];(function walk(n){if(!n||typeof n!=="object")return;if(n.sdt){const a=n.sdt;Array.isArray(a)?a.forEach(x=>sdts.push(x)):sdts.push(a)}for(const k in n){if(n[k]&&typeof n[k]==="object")walk(n[k])}})(body);const out={};sdts.forEach(s=>{const pr=s.sdtPr||{};let tag=null;if(pr.tag&&pr.tag.val)tag=pr.tag.val;if(!tag&&pr.alias&&pr.alias.val)tag=pr.alias.val;const val=xmlGetText(s.sdtContent);if(tag)out[tag]=normText(val)});return out}
-async function parseDocxArrayBuffer(ab){const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");const f=zip.file("word/document.xml");if(!f)throw new Error("word/document.xml not found (is this a valid .docx?)");return await withTimeout(f.async("string"),8000,"Reading document.xml")}
-async function fetchDoc(url){const res=await withTimeout(fetch(url),10000,"Fetching asset");if(!res.ok)throw new Error("HTTP "+res.status);const ab=await withTimeout(res.arrayBuffer(),10000,"Reading asset bytes");return await parseDocxArrayBuffer(ab)}
-function previewFields(fields){const el=document.getElementById("preview");const keys=Object.keys(fields||{}).sort();if(!keys.length){el.classList.add("kv-empty");el.innerHTML="No fields extracted yet.";return}el.classList.remove("kv-empty");el.innerHTML=keys.map(k=>`<div class="row"><div class="key">${k}</div><div class="val">${fields[k]||""}</div></div>`).join("")}
-function buildTitle(fields){const a=normText(fields.ENumber),b=normText(fields.Name_Client),c=normText(fields.Name_Project);const parts=[a,b,c].filter(Boolean);return parts.length?parts.join(" "):null}
-function mapGroupToStatusLabel(v){if(!v)return null;const s=String(v).trim();const setSPC=new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management"]);if(setSPC.has(s))return "SPC";if(s==="Design")return "ENG";if(/^Major/i.test(s))return "MAJ";return null}
-async function buildUpdates(fields){const vals={};pendingName=buildTitle(fields)||null;const rawDate=normText(fields.Due_Date),rawTime=normText(fields.Due_Time);const dateIso=normDate(rawDate),hhmm=parseTimeToHHMM(rawTime);if(dateIso){vals["date6"]=hhmm?{"date":dateIso,"time":hhmm}:{"date":dateIso}}const mappedStatus=mapGroupToStatusLabel(fields.Group);if(mappedStatus){vals["status06"]={"label":mappedStatus}}for(const k in mapping){const m=mapping[k],v=fields[k];if(v==null||v==="")continue;if(m.type==="text"){vals[m.columnId]=v}else if(m.type==="numbers"){const n=Number(String(v).replace(/[^0-9.\-]/g,""));if(!isNaN(n))vals[m.columnId]=String(n)}}return vals}
-async function applyToMonday(vals){const s=JSON.stringify(vals).replace(/"/g,'\\"');const m=`mutation($bid:Int!,$iid:Int!){change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:"${s}"){id}}`;await monday.api(m,{variables:{bid:Number(boardId),iid:Number(itemId)}});if(pendingName){try{const m2=`mutation($iid:Int!,$val:String!){change_simple_column_value(item_id:$iid,column_id:"name",value:$val){id}}`;await monday.api(m2,{variables:{iid:Number(itemId),val:JSON.stringify(pendingName)}})}catch(e){const m3=`mutation($iid:Int!,$name:String!){change_item_name(item_id:$iid,name:$name){id}}`;await monday.api(m3,{variables:{iid:Number(itemId),name:pendingName}})}}
-monday.listen("context",(res)=>{ctx=res.data||{};itemId=ctx.itemId;boardId=ctx.boardId;document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`})
-monday.listen("theme",(res)=>{const theme=res.data?.theme||"auto";document.getElementById("theme-pill").innerText=`Theme: ${theme}`})
-const dz=document.getElementById("dropzone"),fi=document.getElementById("fileinput")
-document.getElementById("choose").onclick=()=>fi.click()
-fi.addEventListener("change",e=>{const f=e.target.files?.[0];if(f&&/\.docx$/i.test(f.name))handleLocalFile(f);else setMsg("Please choose a .docx")})
-dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("k")})
-dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("k")})
-dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("k");const f=e.dataTransfer.files?.[0];if(!f){setMsg("No file dropped");return}if(!/\.docx$/i.test(f.name)){setMsg("Please drop a .docx file");return}handleLocalFile(f)})
-document.getElementById("extract").onclick=handleAttachment
-document.getElementById("apply").onclick=async()=>{if(!updates&&!buildTitle(rawFields)){setMsg("Nothing to apply");return}setMsg("Updating item…");try{await applyToMonday(updates||{});setMsg("Done")}catch(e){showErr(e,"Update failed")}}
-async function handleLocalFile(file){try{setMsg("Reading local .docx… ("+((file.size/1024/1024).toFixed(2))+" MB)");const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");const xml=await parseDocxArrayBuffer(ab);setMsg("Parsing fields…");rawFields=extractSdt(xml);previewFields(rawFields);updates=await buildUpdates(rawFields);document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0&&!buildTitle(rawFields));setMsg((Object.keys(updates||{}).length||buildTitle(rawFields))?"Ready to apply":"Nothing mappable found")}catch(e){showErr(e,"Could not read .docx")}}
-async function getAssetUrl(){const q=`query($itemIds:[Int!]){items(ids:$itemIds){id assets{id name public_url}}}`;const r=await monday.api(q,{variables:{itemIds:[itemId]}});const assets=((r||{}).data||{}).items?.[0]?.assets||[];const doc=assets.find(a=>/\.docx$/i.test(a.name))||assets[0];return doc?doc.public_url:null}
-async function handleAttachment(){try{setMsg("Fetching attachment…");assetUrl=await getAssetUrl();if(!assetUrl){setMsg("No attachment found in this item");return}setMsg("Reading .docx…");const xml=await fetchDoc(assetUrl);setMsg("Parsing fields…");rawFields=extractSdt(xml);previewFields(rawFields);updates=await buildUpdates(rawFields);document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0&&!buildTitle(rawFields));setMsg((Object.keys(updates||{}).length||buildTitle(rawFields))?"Ready to apply":"Nothing mappable found")}catch(e){showErr(e,"Attachment error")}}
+  let ctx=null,itemId=null,boardId=null,rawFields=null,updates=null,assetUrl=null,pendingName=null;
+
+  function setMsg(t){document.getElementById("msg").innerText=t||""}
+  function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
+
+  function withTimeout(promise,ms,label){
+    let t; const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});
+    return Promise.race([promise,timeout]).finally(()=>clearTimeout(t));
+  }
+  function normText(s){return (s||"").trim()}
+  function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
+  function parseTimeToHHMM(s){
+    if(!s)return null;
+    const str=String(s).trim();
+    const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
+    if(!m){const d=new Date("1970-01-01T"+str);if(!isNaN(d))return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");return null}
+    let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();
+    if(ap==="pm"&&hh<12)hh+=12; if(ap==="am"&&hh===12)hh=0;
+    if(hh<0||hh>23||mm<0||mm>59)return null;
+    return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")
+  }
+
+  function xmlGetText(node){
+    if(node==null) return "";
+    if(typeof node==="string") return node;
+    if(Array.isArray(node)) return node.map(xmlGetText).join("");
+    let out="";
+    for(const k in node){
+      if(k==="w:t"||k==="t") out+=xmlGetText(node[k]);
+      else if(k==="w:r"||k==="r"||k==="w:p"||k==="p"||k==="w:br"||k==="br") out+=xmlGetText(node[k]);
+      else if(typeof node[k]==="object") out+=xmlGetText(node[k]);
+    }
+    return out;
+  }
+
+  function extractSdt(documentXml){
+    if(!XMLParserCtor){ throw new Error("XML parser not available (fast-xml-parser)") }
+    const parser=new XMLParserCtor({ignoreAttributes:false,attributeNamePrefix:"",removeNSPrefix:true,allowBooleanAttributes:true,trimValues:false});
+    const j=parser.parse(documentXml);
+    const body=((j||{}).document||{}).body;
+    const sdts=[];
+    (function walk(n){
+      if(!n||typeof n!=="object")return;
+      if(n.sdt){const a=n.sdt; Array.isArray(a)?a.forEach(x=>sdts.push(x)):sdts.push(a)}
+      for(const k in n){ if(n[k]&&typeof n[k]==="object") walk(n[k]) }
+    })(body);
+    const out={};
+    sdts.forEach(s=>{
+      const pr=s.sdtPr||{};
+      let tag=null;
+      if(pr.tag && pr.tag.val) tag=pr.tag.val;
+      if(!tag && pr.alias && pr.alias.val) tag=pr.alias.val;
+      const val=xmlGetText(s.sdtContent);
+      if(tag) out[tag]=normText(val);
+    });
+    return out;
+  }
+
+  async function parseDocxArrayBuffer(ab){
+    const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
+    const f=zip.file("word/document.xml");
+    if(!f) throw new Error("word/document.xml not found (is this a valid .docx?)");
+    return await withTimeout(f.async("string"),8000,"Reading document.xml");
+  }
+
+  async function fetchDoc(url){
+    const res=await withTimeout(fetch(url),10000,"Fetching asset");
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const ab=await withTimeout(res.arrayBuffer(),10000,"Reading asset bytes");
+    return await parseDocxArrayBuffer(ab);
+  }
+
+  function previewFields(fields){
+    const el=document.getElementById("preview");
+    const keys=Object.keys(fields||{}).sort();
+    if(!keys.length){el.classList.add("kv-empty");el.innerHTML="No fields extracted yet.";return}
+    el.classList.remove("kv-empty");
+    el.innerHTML=keys.map(k=>`<div class="row"><div class="key">${k}</div><div class="val">${fields[k]||""}</div></div>`).join("")
+  }
+
+  function buildTitle(fields){
+    const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
+    const parts=[a,b,c].filter(Boolean);
+    return parts.length? parts.join(" ") : null;
+  }
+
+  function mapGroupToStatusLabel(v){
+    if(!v) return null;
+    const s=String(v).trim();
+    const setSPC=new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management"]);
+    if(setSPC.has(s)) return "SPC";
+    if(s==="Design") return "ENG";
+    if(/^Major/i.test(s)) return "MAJ";
+    return null;
+  }
+
+  async function buildUpdates(fields){
+    const vals={};
+    pendingName = buildTitle(fields) || null;
+
+    // date6: always set date; add time only if present
+    const rawDate=normText(fields.Due_Date);
+    const rawTime=normText(fields.Due_Time);
+    const dateIso=normDate(rawDate);
+    const hhmm=parseTimeToHHMM(rawTime);
+    if(dateIso){ vals["date6"]= hhmm? {"date":dateIso,"time":hhmm} : {"date":dateIso}; }
+
+    // status06 from Group mapping
+    const mappedStatus=mapGroupToStatusLabel(fields.Group);
+    if(mappedStatus){ vals["status06"]={"label":mappedStatus}; }
+
+    // other mapped fields
+    for(const k in mapping){
+      const m=mapping[k], v=fields[k];
+      if(v==null||v==="") continue;
+      if(m.type==="text"){ vals[m.columnId]=v; }
+      else if(m.type==="numbers"){
+        const n=Number(String(v).replace(/[^0-9.\-]/g,""));
+        if(!isNaN(n)) vals[m.columnId]=String(n);
+      }
+    }
+    return vals;
+  }
+
+  async function applyToMonday(vals){
+    const s=JSON.stringify(vals).replace(/"/g,'\\"');
+    const m=`mutation($bid:Int!,$iid:Int!){change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:"${s}"){id}}`;
+    await monday.api(m,{variables:{bid:Number(boardId),iid:Number(itemId)}});
+    if(pendingName){
+      try{
+        const m2=`mutation($iid:Int!,$val:String!){change_simple_column_value(item_id:$iid,column_id:"name",value:$val){id}}`;
+        await monday.api(m2,{variables:{iid:Number(itemId),val:JSON.stringify(pendingName)}});
+      }catch(e){
+        const m3=`mutation($iid:Int!,$name:String!){change_item_name(item_id:$iid,name:$name){id}}`;
+        await monday.api(m3,{variables:{iid:Number(itemId),name:pendingName}});
+      }
+    }
+  }
+
+  // ==== Monday context/theme ====
+  monday.listen("context",(res)=>{ctx=res.data||{};itemId=ctx.itemId;boardId=ctx.boardId;document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
+  monday.listen("theme",(res)=>{const theme=res.data?.theme||"auto";document.getElementById("theme-pill").innerText=`Theme: ${theme}`});
+
+  // ==== UI bindings ====
+  const dz=document.getElementById("dropzone"), fi=document.getElementById("fileinput");
+  document.getElementById("choose").onclick=()=>fi.click();
+  fi.addEventListener("change",e=>{
+    const f=e.target.files?.[0];
+    if(f && /\.docx$/i.test(f.name)) handleLocalFile(f); else setMsg("Please choose a .docx");
+  });
+  dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("k")});
+  dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("k")});
+  dz.addEventListener("drop",e=>{
+    e.preventDefault();dz.classList.remove("k");
+    const f=e.dataTransfer.files?.[0];
+    if(!f){setMsg("No file dropped");return}
+    if(!/\.docx$/i.test(f.name)){setMsg("Please drop a .docx file");return}
+    handleLocalFile(f);
+  });
+  document.getElementById("extract").onclick=handleAttachment;
+  document.getElementById("apply").onclick=async()=>{
+    if(!updates && !buildTitle(rawFields)){ setMsg("Nothing to apply"); return }
+    setMsg("Updating item…");
+    try{ await applyToMonday(updates||{}); setMsg("Done") } catch(e){ showErr(e,"Update failed") }
+  };
+
+  // ==== Flows ====
+  async function handleLocalFile(file){
+    try{
+      setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
+      const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");
+      const xml=await parseDocxArrayBuffer(ab);
+      setMsg("Parsing fields…");
+      rawFields=extractSdt(xml);
+      previewFields(rawFields);
+      updates=await buildUpdates(rawFields);
+      document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0 && !buildTitle(rawFields));
+      setMsg((Object.keys(updates||{}).length || buildTitle(rawFields))? "Ready to apply" : "Nothing mappable found");
+    }catch(e){ showErr(e,"Could not read .docx") }
+  }
+
+  async function getAssetUrl(){
+    const q=`query($itemIds:[Int!]){items(ids:$itemIds){id assets{id name public_url}}}`;
+    const r=await monday.api(q,{variables:{itemIds:[itemId]}});
+    const assets=((r||{}).data||{}).items?.[0]?.assets||[];
+    const doc=assets.find(a=>/\.docx$/i.test(a.name))||assets[0];
+    return doc?doc.public_url:null;
+  }
+
+  async function handleAttachment(){
+    try{
+      setMsg("Fetching attachment…");
+      assetUrl=await getAssetUrl();
+      if(!assetUrl){ setMsg("No attachment found in this item"); return }
+      setMsg("Reading .docx…");
+      const xml=await fetchDoc(assetUrl);
+      setMsg("Parsing fields…");
+      rawFields=extractSdt(xml);
+      previewFields(rawFields);
+      updates=await buildUpdates(rawFields);
+      document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0 && !buildTitle(rawFields));
+      setMsg((Object.keys(updates||{}).length || buildTitle(rawFields))? "Ready to apply" : "Nothing mappable found");
+    }catch(e){ showErr(e,"Attachment error") }
+  }
+
+  // surface any unexpected global errors
+  window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
+});
 </script>
 </body>
 </html>
