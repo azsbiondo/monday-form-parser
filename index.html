@@ -1,485 +1,225 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Field Mapper — Preview • Edit • Apply</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Monday SDK -->
-  <script src="https://unpkg.com/monday-sdk-js/dist/main.js"></script>
-  <style>
-    /* ===== Theme (light/dark) ===== */
-    :root{
-      --bg: #f6f7f9; --card:#fff; --text:#1f2328; --muted:#6b7280; --border:#e5e7eb;
-      --accent:#1f7a54; --accent-600:#156346; --accent-050:#eefaf4;
-      --warn:#b54708; --ok:#137c4b; --shadow:0 6px 18px rgba(16,24,40,.08);
-      --radius:14px; --gap:12px; --input-h:38px;
+document.addEventListener("DOMContentLoaded", () => {
+const monday = mondaySdk();
+
+  // === Column mapping (includes PM Lead -> text0) ===
+  // === Fixed mappings ===
+const mapping={
+"Value":{"type":"numbers","columnId":"numeric_mkq0534"},
+"Team_Lead":{"type":"text","columnId":"executive___ops_2"},
+@@ -144,9 +144,9 @@ <h2>Preview & Modify</h2>
+["Scope","scope","textarea"]
+];
+
+  let ctx=null,itemId=null,boardId=null;
+  let itemId=null,boardId=null;
+let edited={}, includeTime=false;
+  let boardSchema=null;
+  let boardSchema=null; // { byId, groupColId, dateColId, statusLabels }
+
+// === Helpers ===
+const $ = sel => document.querySelector(sel);
+@@ -232,7 +232,7 @@ <h2>Preview & Modify</h2>
+return out;
+}
+
+  // === Pre-translate Group ===
+  // === Group translation rules ===
+function translateGroupToOption(v){
+if(!v) return "";
+const s=String(v).trim();
+@@ -244,7 +244,7 @@ <h2>Preview & Modify</h2>
+return "";
+}
+
+  // === Editable preview ===
+  // === Editable preview UI ===
+function renderEditablePreview(source){
+const el=$("#preview"); el.innerHTML=""; el.classList.remove("kv-empty");
+edited = {};
+@@ -304,16 +304,29 @@ <h2>Preview & Modify</h2>
+$("#apply").disabled = false;
+}
+
+  // === Build payload ===
+  // === Build payload (uses dynamic column IDs) ===
+function buildColumnUpdates(){
+    if(!boardSchema) return {};
+const vals={};
+
+    // date
+const d = edited.Due_Date || "";
+const t = includeTime ? (edited.Due_Time || "") : "";
+    if(d){ vals["date6"] = t ? {"date": d, "time": t} : {"date": d}; }
+    if(edited.Group){ vals["status06"] = {"label": edited.Group}; }
+    if(d && boardSchema.dateColId){
+      vals[boardSchema.dateColId] = t ? {"date": d, "time": t} : {"date": d};
     }
-    @media (prefers-color-scheme: dark){
-      :root{
-        --bg:#0f141a; --card:#151b23; --text:#e6edf3; --muted:#9aa7b5; --border:#283241;
-        --accent:#36cf8e; --accent-600:#27b06f; --accent-050:#0f1f19;
-        --shadow:0 6px 18px rgba(0,0,0,.45);
+
+    // group/status
+    if(edited.Group && boardSchema.groupColId){
+      vals[boardSchema.groupColId] = {"label": edited.Group};
+    }
+
+    // simple mapped text/numbers
+for(const k in mapping){
+const m=mapping[k], v=edited[k];
+if(v==null || v==="") continue;
+      // make sure the column exists on this board
+      if(!boardSchema.byId[m.columnId]) continue;
+if(m.type==="text"){ vals[m.columnId]=v; }
+else if(m.type==="numbers"){
+const n=Number(String(v).replace(/[^0-9.\-]/g,""));
+@@ -331,7 +344,7 @@ <h2>Preview & Modify</h2>
+return name;
+}
+
+  // === Schema fetch + validation (IDs as strings) ===
+  // === Schema fetch + dynamic IDs ===
+async function fetchBoardSchema(){
+const q=`query($bid:[ID!]){
+     boards(ids:$bid){
+@@ -342,75 +355,94 @@ <h2>Preview & Modify</h2>
+const res = await runGql("schema", q, {bid:[String(boardId)]});
+const cols = (res.data?.boards?.[0]?.columns)||[];
+const byId = {}; cols.forEach(c=>byId[c.id]=c);
+
+    // Find Group status column
+    const groupCol = cols.find(c => c.type==="color" || c.type==="status") || 
+                     cols.find(c => c.title?.toLowerCase?.() === "group" && (c.type==="status"||c.type==="color")) ||
+                     cols.find(c => c.title?.toLowerCase?.().includes("group") && (c.type==="status"||c.type==="color"));
+    const groupColId = groupCol?.id || "status06"; // last-resort fallback
+
+    // Find Due Date column
+    let dateCol = cols.find(c => c.title?.toLowerCase?.() === "due date" && c.type==="date");
+    if(!dateCol) dateCol = cols.find(c => c.type==="date"); // first date if exact title not found
+    const dateColId = dateCol?.id || "date6"; // fallback
+
+    // Parse status labels (be robust to different shapes)
+let statusLabels=[];
+    const st = byId["status06"];
+    const st = byId[groupColId];
+if(st && st.settings_str){
+try{
+const s=JSON.parse(st.settings_str);
+        statusLabels = (s.labels || Object.values(s.labels_groups?.[0]?.labels||{})).filter(Boolean);
+        if (s.labels && typeof s.labels === "object") {
+          statusLabels = Object.values(s.labels).filter(Boolean);
+        } else if (Array.isArray(s.labels)) {
+          statusLabels = s.labels.filter(Boolean);
+        }
+        if ((!statusLabels || statusLabels.length===0) && Array.isArray(s.labels_groups) && s.labels_groups[0]?.labels){
+          statusLabels = Object.values(s.labels_groups[0].labels).filter(Boolean);
+        }
+        if ((!statusLabels || statusLabels.length===0) && s.labels_positions){
+          statusLabels = Object.keys(s.labels_positions);
+        }
+}catch(_){}
+}
+    console.log("[Schema] columns", byId);
+    console.log("[Schema] status06 labels", statusLabels);
+    return {byId, statusLabels};
+
+    console.log("[Schema] groupColId", groupColId, "dateColId", dateColId);
+    console.log("[Schema] status labels", statusLabels);
+
+    return {byId, groupColId, dateColId, statusLabels};
+}
+
+  // Lenient validator: if we can’t read labels, don’t block updates
+function validatePayload(vals, schema){
+const warnings=[];
+const cleaned = {...vals};
+
+for(const colId of Object.keys(cleaned)){
+const col = schema.byId[colId];
+if(!col){
+warnings.push(`Column '${colId}' not found; skipping.`);
+delete cleaned[colId];
+continue;
+}
+      if(colId==="status06"){
+      if(col.type==="status" || col.type==="color"){
+const label = cleaned[colId]?.label;
+        if(label && !(schema.statusLabels||[]).includes(label)){
+          warnings.push(`Status label '${label}' not in status06; skipping.`);
+          delete cleaned[colId];
+        if(label && Array.isArray(schema.statusLabels) && schema.statusLabels.length>0){
+          if(!schema.statusLabels.includes(label)){
+            warnings.push(`Status label '${label}' not found in '${col.title}'; skipping.`);
+            delete cleaned[colId];
+          }
+}
+}
+      if(colId==="date6"){
+      if(col.type==="date"){
+const v=cleaned[colId];
+        if(!v || !v.date){ warnings.push(`Date for 'date6' missing/invalid; skipping.`); delete cleaned[colId]; }
+        if(!v || !v.date){ warnings.push(`Date for '${col.title}' missing/invalid; skipping.`); delete cleaned[colId]; }
+}
+}
+if(warnings.length){ setMsg("Note: "+warnings.join(" ")); }
+console.log("[Payload] cleaned", cleaned, "warnings:", warnings);
+return cleaned;
+}
+
+  // === Mutations (IDs as strings) ===
+  // === Mutations (IDs as strings, JSON! only) ===
+async function applyToMonday(vals, nameCandidate, scopeText){
+if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
+const cleaned = validatePayload(vals, boardSchema);
+
+    // 1) change_multiple_column_values (JSON! first, fallback to string)
+if(Object.keys(cleaned).length>0){
+const mVar=`mutation($bid:ID!,$iid:ID!,$vals: JSON!){
+       change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$vals){ id }
+     }`;
+      try{
+        await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
+      }catch(err){
+        const s = JSON.stringify(cleaned);
+        const mStr=`mutation($bid:ID!,$iid:ID!,$s:String!){
+          change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$s){ id }
+        }`;
+        await runGql("set-columns(string)", mStr, {bid:String(boardId),iid:String(itemId),s});
       }
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{margin:0;padding:24px;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:var(--bg)}
-    .wrap{max-width:1200px;margin:0 auto;display:grid;gap:var(--gap);grid-template-columns:1.1fr .9fr}
-    @media (max-width: 1024px){ .wrap{grid-template-columns:1fr} }
-    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
-    .card h2{margin:0 0 4px;font-size:18px}
-    .sub{color:var(--muted);margin-bottom:10px}
-
-    /* Dropzone */
-    .dz{border:1.5px dashed var(--border);border-radius:12px;padding:20px 16px;display:flex;gap:14px;align-items:center;cursor:pointer;min-height:84px;transition:.18s;background:linear-gradient(0deg,rgba(127,127,127,.04),rgba(127,127,127,.04))}
-    .dz.dragover{border-color:var(--accent);background:var(--accent-050)}
-    .dz .icon{width:36px;height:36px;border-radius:10px;background:var(--accent);display:grid;place-items:center;color:#fff}
-    .pill{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-600);font-size:12px}
-    .muted{color:var(--muted)}
-    .spacer{flex:1}
-
-    textarea{width:100%;min-height:110px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--text);padding:10px;resize:vertical;outline:none}
-    textarea:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent);border-color:var(--accent-600)}
-
-    /* Controls */
-    .row{display:flex;gap:var(--gap);flex-wrap:wrap;align-items:center}
-    .btn{height:40px;padding:0 14px;border-radius:10px;border:1px solid transparent;cursor:pointer;display:inline-flex;gap:8px;align-items:center;font-weight:600}
-    .btn.primary{background:var(--accent);color:#0b1510}
-    .btn.ghost{background:transparent;border-color:var(--border);color:var(--text)}
-    .btn.low{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent-600)}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-
-    /* Field map table */
-    table{width:100%;border-collapse:separate;border-spacing:0 8px}
-    th,td{padding:8px 10px;vertical-align:top}
-    th{font-weight:600;text-align:left;color:var(--muted);font-size:12px}
-    tr.field{background:linear-gradient(0deg,rgba(127,127,127,.04),rgba(127,127,127,.04));border-radius:10px}
-    tr.field td{border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
-    tr.field td:first-child{border-left:1px solid var(--border);border-radius:10px 0 0 10px}
-    tr.field td:last-child{border-right:1px solid var(--border);border-radius:0 10px 10px 0}
-
-    select, input[type="text"], input[type="date"]{height:38px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:10px;padding:0 10px;min-width:160px;outline:none}
-    select:focus, input[type="text"]:focus, input[type="date"]:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent);border-color:var(--accent-600)}
-
-    .stack{display:flex;gap:8px;flex-wrap:wrap}
-    .mini{font-size:12px}
-    .ok{color:var(--ok)} .warn{color:var(--warn)}
-    details pre{margin:8px 0 0;background:#0b0b0b10;padding:10px;border-radius:8px;overflow:auto}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <!-- LEFT: Ingest & Preview -->
-    <section class="card">
-      <h2>Ingest data</h2>
-      <div class="sub">Drop a file or paste JSON/text. We’ll parse fields, let you edit, map to columns, then apply.</div>
-
-      <div id="dz" class="dz" tabindex="0">
-        <div class="icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M8 2h5l5 5v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M13 2v5h5" stroke="#fff" stroke-width="1.5"/></svg>
-        </div>
-        <div>
-          <div style="font-weight:600">Drop file / click to paste</div>
-          <div class="muted mini">JSON like: { "item_name":"…", "status":"Done", "date":"2025-09-15", "time":"13:00" }</div>
-        </div>
-        <div class="spacer"></div>
-        <span class="pill">Preview → Edit → Apply</span>
-      </div>
-
-      <div style="margin-top:12px">
-        <textarea id="paste" placeholder="Or paste here…"></textarea>
-        <div class="row" style="margin-top:8px">
-          <button id="btnParse" class="btn ghost">Parse</button>
-          <button id="btnClear" class="btn ghost" type="button">Clear</button>
-          <span id="hintL" class="muted"></span>
-        </div>
-      </div>
-
-      <details id="rawPanel" style="margin-top:8px">
-        <summary class="muted">Raw detected</summary>
-        <div id="rawOut" class="muted"><em>Nothing yet.</em></div>
-      </details>
-    </section>
-
-    <!-- RIGHT: Field mapper & Apply -->
-    <section class="card">
-      <h2>Preview & map</h2>
-      <div class="sub">Edit values, choose target columns, then apply to the item.</div>
-
-      <table>
-        <thead>
-          <tr>
-            <th style="width:25%">Field</th>
-            <th style="width:45%">Value</th>
-            <th style="width:30%">Map to column</th>
-          </tr>
-        </thead>
-        <tbody id="fieldBody">
-          <!-- rows injected -->
-        </tbody>
-      </table>
-
-      <div class="row" style="margin-top:10px">
-        <button id="btnApply" class="btn primary">Apply to item</button>
-        <button id="btnRefreshCols" class="btn low" type="button">Reload board columns</button>
-        <span id="hintR" class="muted"></span>
-      </div>
-
-      <details style="margin-top:8px">
-        <summary class="muted">Log</summary>
-        <div id="out" class="muted"></div>
-      </details>
-    </section>
-  </div>
-
-<script>
-/** ======== Monday SDK, context & state ======== */
-const monday = window.mondaySdk();
-const $ = id => document.getElementById(id);
-const write = (html, cls="")=>{
-  const d=$("out"), x=document.createElement("div");
-  x.className=cls; x.innerHTML=html; d.appendChild(x);
-};
-const j = o => JSON.stringify(o,null,2);
-
-let ctx=null, boardCols=[], detected={}, rows=[];
-
-monday.listen("context", ({data})=>{
-  ctx=data;
-  $("hintL").textContent="Ready";
-});
-
-/** ======== Board schema ======== */
-async function loadBoardColumns(boardId){
-  const q=`query($ids:[ID!]){ boards(ids:$ids){ id columns{ id title type settings_str }}}`;
-  const r=await monday.api(q,{variables:{ids:String(boardId)}});
-  boardCols = r?.data?.boards?.[0]?.columns || [];
-  return boardCols;
-}
-function parseStatusLabels(col){
-  try{
-    const s=JSON.parse(col?.settings_str||"{}");
-    const labels = s.labels || s.labels_positions || {};
-    return Object.entries(labels).map(([k,v])=>({id:k,label:String(v)})).filter(x=>x.label);
-  }catch{return []}
-}
-function dateAllowsTime(col){
-  try{
-    const s=JSON.parse(col?.settings_str||"{}");
-    return !!(s.time || s.enable_time || s.allow_time);
-  }catch{return false}
+      await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
 }
 
-/** ======== Dropzone / Paste ======== */
-const dz=$("dz"), paste=$("paste"), rawPanel=$("rawPanel"), rawOut=$("rawOut");
-dz.addEventListener("dragover",(e)=>{e.preventDefault();dz.classList.add("dragover")});
-dz.addEventListener("dragleave",()=>dz.classList.remove("dragover"));
-dz.addEventListener("drop",async(e)=>{
-  e.preventDefault(); dz.classList.remove("dragover");
-  if(e.dataTransfer.files?.length){
-    const file=e.dataTransfer.files[0]; const text=await file.text(); paste.value=text;
-  }else{
-    const text=e.dataTransfer.getData("text"); paste.value=text;
-  }
-  $("btnParse").click();
-});
-dz.addEventListener("click",()=>paste.focus());
-$("btnClear").addEventListener("click",()=>{
-  paste.value=""; rawOut.innerHTML="<em>Nothing yet.</em>"; rawPanel.open=false;
-  detected={}; rows=[]; $("fieldBody").innerHTML="";
-  $("out").innerHTML=""; $("hintL").textContent=""; $("hintR").textContent="";
-});
-
-/** ======== Parsing & field normalization ======== */
-function tryJson(s){ try{return JSON.parse(s)}catch{return null} }
-function scanDateISO(s){
-  const m=String(s).match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
-  return m?`${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`:null;
-}
-function scanTime(s){
-  const m=String(s).match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-  if(!m) return null;
-  const hh=String(m[1]).padStart(2,"0"), mm=m[2]==="30"?"30":"00";
-  return `${hh}:${mm}:00`;
+    // 2) change_item_name
+if(nameCandidate){
+const mName=`mutation($iid:ID!,$name:String!){
+       change_item_name(item_id:$iid,name:$name){ id }
+     }`;
+await runGql("set-name", mName, {iid:String(itemId),name:nameCandidate});
 }
 
-/* Heuristics: normalize to a compact dictionary */
-function normalize(input){
-  const out={};
-  if(typeof input==="object" && input){
-    for(const [k,v] of Object.entries(input)){
-      const key=k.toLowerCase();
-      if(key==="item_name" || key==="name" || key==="item"){
-        out.item_name=String(v);
-      }else if(key.includes("status")){
-        out.status=String(v);
-      }else if(key==="date" || key==="date6" || key.includes("date")){
-        const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : scanDateISO(v);
-        if(iso) out.date=iso;
-      }else if(key==="time" || key.includes("time")){
-        const t = /^\d{2}:\d{2}(:\d{2})?$/.test(String(v)) ? String(v) : scanTime(v);
-        if(t){ const [hh,mm] = t.split(":"); out.hour=hh; out.minute=(mm==="30"?"30":"00"); }
-      }else{
-        // keep other fields verbatim
-        out[k]=v;
-      }
-    }
-  }else{
-    // text: try to pluck bits
-    const iso=scanDateISO(input); if(iso) out.date=iso;
-    const t=scanTime(input); if(t){ const [hh,mm]=t.split(":"); out.hour=hh; out.minute=(mm==="30"?"30":"00"); }
-  }
-  return out;
+    // 3) create_update for Scope
+if(scopeText && scopeText.trim()){
+const body=`Scope: ${scopeText.trim()}`;
+const mUpd=`mutation($iid:ID!,$body:String!){
+@@ -421,7 +453,11 @@ <h2>Preview & Modify</h2>
 }
 
-/** ======== Field rows UI ======== */
-function makeEl(tag, attrs={}, children=[]){
-  const el=document.createElement(tag);
-  Object.entries(attrs).forEach(([k,v])=>{
-    if(k==="class") el.className=v;
-    else if(k==="html") el.innerHTML=v;
-    else el.setAttribute(k,v);
+// === Monday context/theme ===
+  monday.listen("context",(res)=>{const c=res.data||{};ctx=c;itemId=c.itemId;boardId=c.boardId;$("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
+  monday.listen("context",(res)=>{
+    const c=res.data||{};
+    itemId=c.itemId; boardId=c.boardId;
+    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`;
   });
-  [].concat(children).forEach(ch=> el.appendChild(ch));
-  return el;
+monday.listen("theme",(res)=>{$("#theme-pill").innerText=`Theme: ${res.data?.theme||"auto"}`});
+
+// === UI wiring ===
+@@ -445,10 +481,11 @@ <h2>Preview & Modify</h2>
+try{
+if(!edited || Object.keys(edited).length===0){ setMsg("Nothing to apply"); return }
+setMsg("Building updates…");
+      // Ensure schema is loaded so dynamic IDs exist before building payload
+      if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
+const vals = buildColumnUpdates();
+const nameCandidate = buildItemNameFromEdited();
+const scopeText = edited.Scope || "";
+
+if(Object.keys(vals).length===0 && !nameCandidate && !scopeText){
+setMsg("Nothing mappable found"); return;
 }
-
-function renderRows(){
-  const body=$("fieldBody"); body.innerHTML="";
-  rows = []; // reset
-
-  // Build editable rows from detected dict
-  const keysOrder = Object.keys(detected);
-
-  // Known preferred order
-  const preferred=["item_name","status","date","hour","minute"];
-  preferred.concat(keysOrder.filter(k=>!preferred.includes(k))).forEach(key=>{
-    if(!(key in detected)) return;
-    const row = buildRow(key, detected[key]);
-    rows.push(row);
-    body.appendChild(row.tr);
-  });
-}
-
-function buildRow(key, value){
-  const tr=makeEl("tr",{class:"field"});
-  const tdLabel=makeEl("td",{});
-  const tdValue=makeEl("td",{});
-  const tdMap=makeEl("td",{});
-
-  // Label
-  tdLabel.innerHTML = `<div style="font-weight:600">${key}</div><div class="muted mini"></div>`;
-
-  // Value editor
-  let editor;
-  if(key==="date"){
-    editor = makeEl("input",{type:"date", value: value || ""});
-  }else if(key==="hour"){
-    editor = makeEl("select",{});
-    editor.appendChild(new Option("—",""));
-    for(let h=0;h<24;h++){ const v=String(h).padStart(2,"0"); editor.appendChild(new Option(v,v)); }
-    editor.value = (value||"").padStart(2,"0");
-  }else if(key==="minute"){
-    editor = makeEl("select",{});
-    editor.appendChild(new Option("—",""));
-    editor.appendChild(new Option("00","00"));
-    editor.appendChild(new Option("30","30"));
-    editor.value = (value==="30"?"30": value==="00"?"00":"");
-  }else{
-    editor = makeEl("input",{type:"text", value: value ?? ""});
-  }
-  tdValue.appendChild(editor);
-
-  // Column mapping select
-  const mapSel = makeEl("select",{});
-  mapSel.appendChild(new Option("— do not apply —",""));
-  // Suggest sensible defaults
-  const suggest = (id)=> boardCols.find(c=>c.id===id);
-  const like = (type)=> boardCols.filter(c=>c.type===type);
-
-  const candidates = [
-    // high-confidence aliases
-    ...(key==="item_name" ? [suggest("name")].filter(Boolean) : []),
-    ...(key==="status"    ? like("color") : []),
-    ...(key==="date"      ? like("date")  : []),
-    // otherwise: offer all columns
-    ...boardCols
-  ];
-
-  // Deduplicate while preserving order
-  const seen=new Set();
-  candidates.forEach(c=>{
-    if(!c) return;
-    if(seen.has(c.id)) return;
-    seen.add(c.id);
-    mapSel.appendChild(new Option(`${c.title} • ${c.id} (${c.type})`, c.id));
-  });
-
-  // Auto-select common targets
-  if(key==="item_name"){ mapSel.value="name"; }
-  if(key==="status"){ const s=boardCols.find(c=>c.type==="color"); if(s) mapSel.value=s.id; }
-  if(key==="date"){ const d=boardCols.find(c=>c.type==="date"); if(d) mapSel.value=d.id; }
-
-  tdMap.appendChild(mapSel);
-
-  tr.appendChild(tdLabel); tr.appendChild(tdValue); tr.appendChild(tdMap);
-
-  return {
-    key,
-    tr,
-    getValue(){
-      if(key==="hour"||key==="minute"||key==="date") return editor.value || "";
-      return editor.value;
-    },
-    getTarget(){ return mapSel.value || ""; }
-  };
-}
-
-/** ======== Compose payload for Monday ======== */
-function buildColumnValues(){
-  const byCol = {}; // { colId: valueForThatColumn }
-
-  // Group minute/hour with date row mapping (if all point to the same date col)
-  // Strategy:
-  // 1) collect row targets
-  const map = {};
-  rows.forEach(r=>{
-    const col = r.getTarget();
-    if(!col) return;
-    (map[col] ||= []).push(r);
-  });
-
-  for(const [colId, rs] of Object.entries(map)){
-    const col = boardCols.find(c=>c.id===colId);
-    if(!col) continue;
-
-    if(colId==="name"){
-      const rName = rs.find(r=>r.key==="item_name");
-      if(rName){
-        // item name is not part of change_multiple_column_values; we’ll change it separately.
-        byCol["__item_name__"] = rName.getValue();
-      }
-      continue;
-    }
-
-    if(col.type==="date"){
-      // Look for date, hour, minute rows mapped here
-      const vDate = rs.find(r=>r.key==="date")?.getValue() || "";
-      const vHour = rs.find(r=>r.key==="hour")?.getValue() || "";
-      const vMin  = rs.find(r=>r.key==="minute")?.getValue() || "";
-
-      if(!vDate){ continue; }
-      const allowTime = dateAllowsTime(col);
-      if(allowTime && vHour){
-        const hh=String(vHour).padStart(2,"0");
-        const mm=vMin==="30"?"30":"00";
-        byCol[colId] = { date: vDate, time: `${hh}:${mm}:00` };
-      }else{
-        byCol[colId] = { date: vDate };
-      }
-      continue;
-    }
-
-    if(col.type==="color"){
-      // status label text -> validate against labels
-      const r = rs.find(x=>x.key==="status");
-      if(!r) continue;
-      const want = String(r.getValue()||"").trim();
-      if(!want) continue;
-      const labels = parseStatusLabels(col).map(x=>x.label.toLowerCase());
-      if(labels.includes(want.toLowerCase())){
-        byCol[colId] = { label: want };
-      }else{
-        write(`Skipping status for <b>${col.title}</b>: label "<b>${want}</b>" not found.`, "warn");
-      }
-      continue;
-    }
-
-    // Default: set as text
-    const rAny = rs[0];
-    if(rAny){
-      byCol[colId] = String(rAny.getValue() ?? "");
-    }
-  }
-
-  return byCol;
-}
-
-/** ======== Apply to Monday ======== */
-async function apply(){
-  $("hintR").textContent="Applying…";
-  $("btnApply").disabled=true; $("out").innerHTML="";
-
-  try{
-    if(!ctx?.boardId || !ctx?.itemId) throw new Error("Open this app inside a Monday item.");
-    const boardId = ctx.boardId, itemId = ctx.itemId;
-
-    const colVals = buildColumnValues();
-
-    // Handle item name
-    const itemName = colVals["__item_name__"]; delete colVals["__item_name__"];
-
-    if(Object.keys(colVals).length===0 && !itemName){
-      write("Nothing to apply. Map at least one field to a column.", "warn");
-      return;
-    }
-
-    if(Object.keys(colVals).length){
-      const m = `mutation($b:ID!,$i:ID!,$v:JSON!){
-        change_multiple_column_values(board_id:$b,item_id:$i,column_values:$v){ id }
-      }`;
-      const variables = { b:String(boardId), i:String(itemId), v: JSON.stringify(colVals) };
-      write(`<details><summary>column_values</summary><pre>${j(colVals)}</pre></details>`);
-      const r = await monday.api(m,{variables});
-      if(r.errors) throw new Error(r.errors[0].message);
-    }
-
-    if(itemName){
-      const mu = `mutation($b:ID!,$i:ID!,$name:String!){
-        change_simple_column_value(board_id:$b, item_id:$i, column_id:"name", value:$name){ id }
-      }`;
-      const rv = await monday.api(mu,{variables:{b:String(boardId),i:String(itemId),name:itemName}});
-      if(rv.errors) throw new Error(rv.errors[0].message);
-      write(`Item name updated.`, "ok");
-    }
-
-    write(`<b class="ok">✅ Done</b>`,"ok");
-  }catch(e){
-    write(`<b class="warn">❌ ${e?.message||e}</b>`,"warn");
-  }finally{
-    $("btnApply").disabled=false; $("hintR").textContent="";
-  }
-}
-
-/** ======== Wire up ======== */
-$("btnParse").addEventListener("click", async ()=>{
-  try{
-    $("hintL").textContent="Parsing…";
-    if(!ctx?.boardId) throw new Error("Board not available in context.");
-    await loadBoardColumns(ctx.boardId);
-
-    const raw = paste.value.trim();
-    const maybe = tryJson(raw);
-    detected = normalize(maybe ?? raw);
-
-    rawOut.innerHTML=`<pre>${j(detected)}</pre>`;
-    rawPanel.open=true;
-
-    renderRows();
-  }catch(e){
-    rawOut.innerHTML=`<div class="warn">Error: ${e?.message||e}</div>`;
-    rawPanel.open=true;
-  }finally{
-    $("hintL").textContent="";
-  }
-});
-
-$("btnApply").addEventListener("click", apply);
-$("btnRefreshCols").addEventListener("click", async ()=>{
-  if(!ctx?.boardId) return;
-  await loadBoardColumns(ctx.boardId);
-  renderRows();
-});
-</script>
-</body>
-</html>
