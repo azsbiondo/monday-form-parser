@@ -2,79 +2,110 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Update status06 & date6</title>
+  <title>Update from Dropzone (status06 & date6)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Monday SDK (use CDN, do not self-host) -->
+  <!-- Monday SDK (must be CDN, not self-hosted) -->
   <script src="https://unpkg.com/monday-sdk-js/dist/main.js"></script>
   <style>
     :root { --gap: 12px; }
     * { box-sizing: border-box; }
-    body{font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; padding: 16px;}
+    body{font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; padding: 16px; color:#1f1f1f}
     h2{margin: 0 0 6px;}
     .muted{color:#555}
-    .row{display:flex; gap:var(--gap); align-items:center; flex-wrap:wrap; margin: 8px 0;}
-    label{display:flex; flex-direction:column; font-size:12px; color:#333; gap:6px;}
-    input[type="date"], input[type="text"], select {
-      padding:8px; border:1px solid #ccc; border-radius:8px; min-width: 180px;
+    .row{display:flex; gap:var(--gap); align-items:center; flex-wrap:wrap;}
+    .col{display:flex; flex-direction:column; gap:6px}
+    label{font-size:12px; color:#333;}
+    input[type="date"], input[type="text"], select, textarea {
+      padding:8px; border:1px solid #ccc; border-radius:8px; min-width: 180px; font:inherit;
     }
-    .time-wrap{display:flex; gap:8px; align-items:center;}
-    .time-wrap select { min-width: 100px; }
-    button{padding:10px 14px; border:0; border-radius:8px; background:#1f7a54; color:#fff; cursor:pointer}
-    button:disabled{opacity:.6; cursor:not-allowed}
+    .grid{display:grid; grid-template-columns: 1fr; gap: var(--gap)}
+    @media (min-width:860px){ .grid{ grid-template-columns: 1.1fr .9fr } }
+    .pill{display:inline-block; padding:2px 8px; background:#eee; border-radius:999px; font-size:12px}
+    .btn{padding:10px 14px; border:0; border-radius:8px; background:#1f7a54; color:#fff; cursor:pointer}
+    .btn:disabled{opacity:.6; cursor:not-allowed}
+    .btn.secondary{background:#eaeaea; color:#222}
+    .btn.warning{background:#b54708}
+    .stack{display:flex; flex-direction:column; gap:8px}
+    .time-wrap{display:flex; gap:8px; align-items:center}
+    .dropzone{
+      border:2px dashed #b9b9b9; border-radius:12px; padding:18px; text-align:center; transition: all .15s ease;
+      background:#fafafa; cursor:pointer;
+    }
+    .dropzone.dragover{border-color:#1f7a54; background:#f0fff7}
+    .dropzone h3{margin:6px 0 2px; font-size:16px}
+    .dropzone p{margin:0; color:#666; font-size:12px}
+    .actions{display:flex; gap:8px; flex-wrap:wrap}
     pre{background:#f6f6f6; padding:10px; border-radius:8px; overflow:auto; margin:6px 0 0}
     details{margin-top:8px}
     .ok{color:#117a37}
     .warn{color:#b54708}
-    .grid{display:grid; grid-template-columns: 1fr; gap: var(--gap)}
-    @media (min-width:720px){ .grid{ grid-template-columns: 1fr 1fr } }
-    .pill{display:inline-block; padding:2px 8px; background:#eee; border-radius:999px; font-size:12px}
+    .kbd{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; background:#eee; padding:1px 6px; border-radius:6px; font-size:12px}
   </style>
 </head>
 <body>
   <h2>Update this item</h2>
-  <div class="muted">Columns: <span class="pill">status06</span> (Status), <span class="pill">date6</span> (Date)</div>
+  <div class="muted">Targets: <span class="pill">status06</span> (Status), <span class="pill">date6</span> (Date)</div>
 
   <div class="grid" style="margin-top:12px">
-    <label>
-      Status label (status06)
-      <input id="statusLabel" type="text" placeholder="e.g. Done / In Progress / TBD" />
-    </label>
-
-    <div class="row" style="align-items:flex-end">
-      <label>
-        Date (date6)
-        <input id="dateOnly" type="date" />
-      </label>
-
-      <div class="time-wrap">
-        <label>
-          Hour (24h)
-          <select id="hour">
-            <option value="">—</option>
-          </select>
-        </label>
-
-        <label>
-          Minute
-          <select id="minute">
-            <option value="">—</option>
-            <option value="00">00</option>
-            <option value="30">30</option>
-          </select>
-        </label>
+    <!-- LEFT: Dropzone + extracted preview -->
+    <div class="stack">
+      <div id="dz" class="dropzone" tabindex="0">
+        <h3>Drop a file or paste text/JSON</h3>
+        <p>Drag & drop, or click to paste into the box below. We'll try to detect status, date and time.</p>
       </div>
+      <textarea id="paste" rows="8" placeholder="Paste email/text/JSON here (optional)…"></textarea>
+      <div class="actions">
+        <button id="btnParse" class="btn secondary">Extract from input</button>
+        <button id="btnClear" class="btn secondary">Clear</button>
+      </div>
+
+      <details id="extractPanel">
+        <summary>Extracted preview</summary>
+        <div id="extractOut"><em class="muted">Nothing yet.</em></div>
+      </details>
+    </div>
+
+    <!-- RIGHT: Manual controls -->
+    <div class="stack">
+      <div class="col">
+        <label>Status label (status06)</label>
+        <input id="statusLabel" type="text" placeholder="e.g. Done / In Progress / TBD" />
+        <small class="muted">We’ll validate against the board’s labels.</small>
+      </div>
+
+      <div class="row" style="align-items:flex-end">
+        <div class="col">
+          <label>Date (date6)</label>
+          <input id="dateOnly" type="date" />
+        </div>
+
+        <div class="time-wrap">
+          <div class="col">
+            <label>Hour (24h)</label>
+            <select id="hour"><option value="">—</option></select>
+          </div>
+          <div class="col">
+            <label>Minute</label>
+            <select id="minute">
+              <option value="">—</option>
+              <option value="00">00</option>
+              <option value="30">30</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btnApply" class="btn">Apply to item</button>
+        <span id="hint" class="muted"></span>
+      </div>
+
+      <div id="out"></div>
     </div>
   </div>
 
-  <div class="row">
-    <button id="btn">Apply</button>
-    <span id="hint" class="muted"></span>
-  </div>
-
-  <div id="out" style="margin-top:12px"></div>
-
 <script>
-/** ---------- SDK / helpers ---------- **/
+/** ---------- Monday SDK & DOM helpers ---------- **/
 const monday = window.mondaySdk();
 const $ = (id)=>document.getElementById(id);
 const out = (html, cls="")=>{
@@ -83,26 +114,28 @@ const out = (html, cls="")=>{
 };
 const j = (o)=>JSON.stringify(o,null,2);
 
-let context=null;
+let context=null, boardColumnsCache=null;
+
 monday.listen("context", ({data})=>{
-  context=data;
+  context = data;
   out(`<b>[Context]</b> ${j({boardId:data.boardId, itemId:data.itemId})}`,"muted");
   $("hint").textContent = "Ready";
 });
 
-function fillHourOptions(){
+/** ---------- UI: hour options ---------- **/
+(function fillHourOptions(){
   const hour = $("hour");
-  // Add 00..23
   for(let h=0; h<=23; h++){
     const v = String(h).padStart(2,"0");
     const opt = document.createElement("option");
     opt.value = v; opt.textContent = v;
     hour.appendChild(opt);
   }
-}
-fillHourOptions();
+})();
 
+/** ---------- Board schema helpers ---------- **/
 async function getBoardColumns(boardId){
+  if(boardColumnsCache) return boardColumnsCache;
   const q=`
     query($ids:[ID!]){
       boards(ids:$ids){
@@ -112,49 +145,168 @@ async function getBoardColumns(boardId){
     }`;
   const r = await monday.api(q,{variables:{ids:String(boardId)}});
   if(r.errors) throw new Error(r.errors[0].message);
-  return r.data.boards?.[0]?.columns||[];
+  boardColumnsCache = r.data.boards?.[0]?.columns||[];
+  return boardColumnsCache;
 }
-
 function parseStatusLabels(settings_str){
   try{
     const s=JSON.parse(settings_str||"{}");
-    // labels may come under "labels" (map of index->string) or "labels_positions"
     const raw = s.labels || s.labels_positions || {};
     return Object.values(raw).filter(Boolean).map(x=>String(x));
   }catch{ return []; }
 }
-
 function isDateTimeEnabled(settings_str){
   try{
     const s=JSON.parse(settings_str||"{}");
-    // Monday may use any of these flags
     return Boolean(s.time || s.enable_time || s.allow_time);
   }catch{ return false; }
 }
-
-/**
- * Build the value for the date column.
- * - dateISO is required to include date
- * - time is included only if column has time enabled AND user selected an hour
- * - seconds are always "00"
- */
 function buildDateValue(settings_str, dateISO, hourStr, minuteStr){
   if(!dateISO) return null;
   const dtEnabled = isDateTimeEnabled(settings_str);
-
-  if(!dtEnabled) return { date: dateISO }; // never include time if disabled
-
-  // If hour is provided, minute defaults to "00" if empty.
+  if(!dtEnabled) return { date: dateISO };
   if(hourStr){
     const hh = hourStr.padStart(2,"0");
-    const mm = (minuteStr || "00").padStart(2,"0"); // only "00" or "30" from the UI
-    const ss = "00"; // per requirement
+    const mm = (minuteStr || "00").padStart(2,"0");
+    const ss = "00";
     return { date: dateISO, time: `${hh}:${mm}:${ss}` };
   }
-  // No hour -> send only date
   return { date: dateISO };
 }
 
+/** ---------- Dropzone & parsing ---------- **/
+const dz = $("dz");
+const paste = $("paste");
+const extractPanel = $("extractPanel");
+const extractOut = $("extractOut");
+
+function showExtract(o){
+  extractOut.innerHTML = `<pre>${j(o)}</pre>`;
+  extractPanel.open = true;
+}
+function clearExtract(){
+  extractOut.innerHTML = `<em class="muted">Nothing yet.</em>`;
+  extractPanel.open = false;
+}
+
+function readFileAsText(file){
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onload = ()=>res(String(r.result||""));
+    r.onerror= ()=>rej(r.error||new Error("Read failed"));
+    r.readAsText(file);
+  });
+}
+function textFromDataTransfer(dt){
+  // Prefer files; fallback to text
+  if(dt.files && dt.files.length>0) return readFileAsText(dt.files[0]);
+  return new Promise((res)=> dt.getData
+    ? res(dt.getData("text") || "")
+    : res(""));
+}
+function addDzState(on){ dz.classList.toggle("dragover", !!on); }
+
+// Heuristics: attempt to detect status label, date & time in arbitrary text/JSON
+function extractFieldsFromText(raw, allowedStatusLabels){
+  let status=null, dateISO=null, hour=null, minute=null;
+  const txt = String(raw||"");
+  // Try JSON first
+  try{
+    const obj = JSON.parse(txt);
+    // Common shapes
+    if(!status){
+      const cand = obj.status || obj.Status || obj.label || obj.status_label;
+      if(cand && typeof cand==="string") status=cand.trim();
+    }
+    if(!dateISO){
+      const d = obj.date || obj.Date || obj.date6 || obj.dateOnly;
+      if(d && /^\d{4}-\d{2}-\d{2}$/.test(d)) dateISO=d;
+    }
+    if(!hour){
+      const t = obj.time || obj.Time || obj.time24 || obj.time_str;
+      if(t && /^\d{2}:\d{2}/.test(t)){
+        const [hh,mm] = String(t).split(":");
+        hour = hh.padStart(2,"0");
+        minute = (mm==="30"?"30":"00");
+      }
+    }
+  }catch{}
+
+  // Fallback regex search in free text
+  if(!dateISO){
+    const m = txt.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/); // YYYY-MM-DD / YYYY/MM/DD
+    if(m){
+      const y=m[1], mo=String(m[2]).padStart(2,"0"), d=String(m[3]).padStart(2,"0");
+      dateISO = `${y}-${mo}-${d}`;
+    }
+  }
+  if(!hour){
+    const t = txt.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/); // 24h
+    if(t){
+      hour = String(t[1]).padStart(2,"0");
+      minute = (t[2]==="30") ? "30" : "00";
+    }
+  }
+  if(!status && allowedStatusLabels.length){
+    // Find any allowed label present in text (case-insensitive)
+    const low = txt.toLowerCase();
+    status = allowedStatusLabels.find(l=>low.includes(String(l).toLowerCase())) || null;
+  }
+  return { status, dateISO, hour, minute };
+}
+
+dz.addEventListener("dragover", (e)=>{ e.preventDefault(); addDzState(true); });
+dz.addEventListener("dragleave", ()=>addDzState(false));
+dz.addEventListener("drop", async (e)=>{
+  e.preventDefault(); addDzState(false);
+  try{
+    const txt = await textFromDataTransfer(e.dataTransfer);
+    paste.value = txt;
+    $("btnParse").click();
+  }catch(err){
+    showExtract({ error:String(err) });
+  }
+});
+dz.addEventListener("click", ()=>{ paste.focus(); });
+
+$("btnClear").addEventListener("click", ()=>{
+  paste.value=""; clearExtract();
+  $("statusLabel").value="";
+  $("dateOnly").value="";
+  $("hour").value="";
+  $("minute").value="";
+});
+
+/** ---------- Parse from input ---------- **/
+$("btnParse").addEventListener("click", async ()=>{
+  try{
+    if(!context?.boardId) throw new Error("Open inside an item to load board schema.");
+    const cols = await getBoardColumns(context.boardId);
+    const statusCol = cols.find(c=>c.id==="status06");
+    const dateCol   = cols.find(c=>c.id==="date6");
+    const allowed = statusCol ? parseStatusLabels(statusCol.settings_str) : [];
+
+    const { status, dateISO, hour, minute } = extractFieldsFromText(paste.value, allowed);
+
+    // Populate UI if present
+    if(status) $("statusLabel").value = status;
+    if(dateISO) $("dateOnly").value = dateISO;
+    if(hour) $("hour").value = hour;
+    if(minute) $("minute").value = (minute==="30" ? "30" : "00");
+
+    showExtract({
+      detected: { status, dateISO, hour, minute },
+      hints: {
+        statusMatchedAgainst: allowed,
+        dateTimeEnabled: dateCol ? isDateTimeEnabled(dateCol.settings_str) : null
+      }
+    });
+  }catch(e){
+    showExtract({ error: e?.message||String(e) });
+  }
+});
+
+/** ---------- Apply to Monday ---------- **/
 async function changeValues(boardId,itemId,valsObj){
   const m = `
     mutation($bid:ID!, $iid:ID!, $vals:JSON!){
@@ -167,11 +319,10 @@ async function changeValues(boardId,itemId,valsObj){
   return r.data.change_multiple_column_values?.id || "ok";
 }
 
-/** ---------- Click handler ---------- **/
-$("btn").addEventListener("click", async ()=>{
+$("btnApply").addEventListener("click", async ()=>{
   $("out").innerHTML = "";
   $("hint").textContent = "Working…";
-  $("btn").disabled = true;
+  $("btnApply").disabled = true;
 
   try{
     if(!context?.boardId||!context?.itemId) throw new Error("Open this page inside a Monday item view.");
@@ -182,11 +333,6 @@ $("btn").addEventListener("click", async ()=>{
     const statusCol = cols.find(c=>c.id==="status06");
     const dateCol   = cols.find(c=>c.id==="date6");
     if(!dateCol) throw new Error('Column "date6" not found.');
-
-    out(`<b>Columns found</b> ${j({
-      status06: statusCol?{id:statusCol.id,title:statusCol.title,type:statusCol.type}:null,
-      date6: {id:dateCol.id,title:dateCol.title,type:dateCol.type, timeEnabled:isDateTimeEnabled(dateCol.settings_str)}
-    })}`,"muted");
 
     const vals = {};
 
@@ -202,13 +348,12 @@ $("btn").addEventListener("click", async ()=>{
     }
 
     // Date (+ optional time)
-    const dateISO = ($("dateOnly").value||"").trim(); // YYYY-MM-DD
-    const hourStr = ($("hour").value||"").trim();     // "00".."23" or ""
-    const minuteStr = ($("minute").value||"").trim(); // "" or "00" or "30"
+    const dateISO = ($("dateOnly").value||"").trim();      // YYYY-MM-DD
+    const hourStr = ($("hour").value||"").trim();          // "00".."23" or ""
+    const minuteStr = ($("minute").value||"").trim();      // "" or "00" or "30"
     const dateVal = buildDateValue(dateCol.settings_str, dateISO, hourStr, minuteStr);
     if(dateVal) vals["date6"]=dateVal;
 
-    // Nothing to send?
     if(Object.keys(vals).length===0){
       out(`<div class="warn">Nothing to update — provide a Status and/or Date.</div>`,"warn");
       return;
@@ -219,7 +364,7 @@ $("btn").addEventListener("click", async ()=>{
   }catch(e){
     out(`<b class="warn">❌ Update failed:</b> ${e?.message||e}`,"warn");
   }finally{
-    $("btn").disabled = false;
+    $("btnApply").disabled = false;
     $("hint").textContent = "";
   }
 });
