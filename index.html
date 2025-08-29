@@ -16,97 +16,81 @@
 </head>
 <body>
   <h2>Apply values to this item</h2>
-  <p>This demo updates the current item’s <b>status06</b> (Group) and <b>date6</b> (Due Date). Add other columns in <code>buildColumnValues()</code>.</p>
+  <p>Updates <b>status06</b> (Group) and <b>date6</b> (Date). Edit <code>buildColumnValues()</code> to add more.</p>
   <button id="apply" class="ok">Apply to Monday</button>
   <div id="out" style="margin-top:16px;"></div>
 
   <script>
-    // 1) Initialize SDK (note: mondaySdk, not mondaySDK)
+    // Initialize SDK (correct casing: mondaySdk)
     const monday = window.mondaySdk();
 
-    // Helper: map your free-text "Group" to status06 labels
     function normalizeGroupLabel(raw) {
       if (!raw) return null;
       const s = String(raw).trim().toUpperCase();
-      // Allowed labels per your board: SPC / ENG / MAJ / MKT / TBD
       if (["SPC","SPEC","SPECIAL"].includes(s)) return "SPC";
       if (["ENG","ENGINEERING"].includes(s)) return "ENG";
       if (["MAJ","MAJOR"].includes(s)) return "MAJ";
       if (["MKT","MARKETING"].includes(s)) return "MKT";
       if (["TBD","UNKNOWN","NA","N/A"].includes(s)) return "TBD";
-      // Default/fallback: keep only valid ones, otherwise null to avoid validation errors
-      return null;
+      return null; // skip invalid labels to avoid validation errors
     }
 
-    // Helper: build the JSON object you want to send to change_multiple_column_values
     function buildColumnValues({ groupText, dueDateISO, dueTime24 }) {
       const colVals = {};
 
-      // status06 (your Group column)
+      // Your Group status column
       const label = normalizeGroupLabel(groupText);
-      if (label) {
-        colVals["status06"] = { label };   // <-- your confirmed status column id
-      }
+      if (label) colVals["status06"] = { label };
 
-      // date6 (your Date column) — time is optional on Monday's date columns
+      // Your Date column (time optional)
       if (dueDateISO) {
         if (dueTime24) {
-          colVals["date6"] = { date: dueDateISO, time: dueTime24 }; // "YYYY-MM-DD", "HH:mm:ss"
+          colVals["date6"] = { date: dueDateISO, time: dueTime24 }; // "YYYY-MM-DD", "HH:mm" or "HH:mm:ss"
         } else {
           colVals["date6"] = { date: dueDateISO };
         }
       }
 
-      // EXAMPLES for adding more columns safely:
-      // colVals["text0"] = "Some text";
-      // colVals["numbers2"] = 123.45;
-      // colVals["status3"] = { label: "Done" };
-      // colVals["person4"] = { personsAndTeams: [{ id: 12345678, kind: "person" }] };
-
       return colVals;
     }
 
-    // 2) Get context (board/item) from Monday
     let ctx = null;
     monday.listen("context", (res) => {
       ctx = res.data;
-      // You typically have: ctx.boardId, ctx.itemId (in an Item view)
       console.log("[Context]", ctx);
     });
 
-    // 3) Click handler: perform the mutation with monday.api()
     document.getElementById("apply").addEventListener("click", async () => {
       const out = document.getElementById("out");
       out.innerHTML = "";
 
       try {
-        // Require context
-        const boardId = ctx?.boardId;
-        const itemId  = ctx?.itemId;
-        if (!boardId || !itemId) {
+        const boardIdRaw = ctx?.boardId;
+        const itemIdRaw  = ctx?.itemId;
+        if (!boardIdRaw || !itemIdRaw) {
           throw new Error("No boardId/itemId in context. Open this inside a Monday item view.");
         }
 
-        // TODO: Replace these with your real parsed values
-        // Example placeholders:
-        const groupText = "SPC";           // e.g., parsed from your Word doc
-        const dueDateISO = "2025-09-15";   // "YYYY-MM-DD"
-        const dueTime24 = "13:00:00";      // optional "HH:mm:ss" (omit to set date only)
+        // Cast IDs to strings for GraphQL ID type
+        const boardId = String(boardIdRaw);
+        const itemId  = String(itemIdRaw);
+
+        // TODO: replace with your parsed values
+        const groupText = "SPC";
+        const dueDateISO = "2025-09-15";
+        const dueTime24  = "13:00"; // optional
 
         const colValsObj = buildColumnValues({ groupText, dueDateISO, dueTime24 });
-
-        // IMPORTANT: column_values must be sent as a JSON STRING
         const columnValsString = JSON.stringify(colValsObj);
 
+        // NOTE: board_id expects ID!, item_id expects ID (nullable) on your schema
         const mutation = `
-          mutation ChangeVals($boardId: Int!, $itemId: Int!, $columnVals: JSON!) {
+          mutation ChangeVals($boardId: ID!, $itemId: ID, $columnVals: JSON!) {
             change_multiple_column_values(
               board_id: $boardId,
               item_id: $itemId,
               column_values: $columnVals
-            ) {
-              id
-            }
+            ) { id }
           }
         `;
 
@@ -120,7 +104,8 @@
         console.log("[GQL Response]", resp);
 
         if (resp.error || resp.errors) {
-          throw new Error((resp.error?.message) || (resp.errors && resp.errors[0] && resp.errors[0].message) || "Unknown GraphQL error");
+          const msg = (resp.error?.message) || (resp.errors && resp.errors[0] && resp.errors[0].message) || "Unknown GraphQL error";
+          throw new Error(msg);
         }
 
         out.innerHTML = `<div>✅ Updated item <b>${itemId}</b> on board <b>${boardId}</b>.</div>
