@@ -11,7 +11,9 @@
 :root{--bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;--accent:#3d6317;--accent-2:#24468E;--border:rgba(255,255,255,.12);--shadow:0 10px 25px rgba(0,0,0,.35)}
 @media (prefers-color-scheme: light){:root{--bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;--accent:#3d6317;--accent-2:#24468E;--border:rgba(10,12,16,.08);--shadow:0 10px 25px rgba(10,12,16,.08)}}
 html,body{height:100%}
-body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:radial-gradient(1200px 600px at 20% -10%,rgba(36,70,142,.25),transparent 60%),radial-gradient(900px 450px at 120% 20%,rgba(61,99,23,.20),transparent 60%),var(--bg);color:var(--text)}
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:
+  radial-gradient(1200px 600px at 20% -10%,rgba(36,70,142,.25),transparent 60%),
+  radial-gradient(900px 450px at 120% 20%,rgba(61,99,23,.20),transparent 60%),var(--bg);color:var(--text)}
 .container{max-width:980px;margin:24px auto;padding:0 20px}
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .title{font-size:20px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
@@ -31,14 +33,16 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
 .drop{display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;transition:border-color .2s ease,background .2s ease}
 .drop.k{border-color:var(--accent-2);background:rgba(36,70,142,.06)}
 .preview{max-height:310px;overflow:auto}
-.row{display:grid;grid-template-columns:200px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border)}
+.row{display:grid;grid-template-columns:200px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
 .key{font-weight:700}
-.val{color:var(--text)}
+.input{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text)}
 .kv-empty{color:var(--muted)}
 .kpi{display:flex;gap:10px;flex-wrap:wrap}
 .kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
 .footer-note{font-size:11px;color:var(--muted);padding:10px 14px 16px 14px}
 hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+.hide{display:none!important}
 </style>
 </head>
 <body>
@@ -53,24 +57,26 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
   <div class="panel">
     <div class="toolbar">
       <div class="actions">
-        <button class="btn" id="extract">Extract from attachment</button>
+        <!-- Extract-from-attachment hidden as requested -->
+        <button class="btn hide" id="extract">Extract from attachment</button>
         <button class="btn primary" id="apply" disabled>Apply to item</button>
       </div>
       <div class="actions">
         <button class="btn" id="choose">Choose .docx</button>
       </div>
     </div>
-    <div class="statusline" id="msg">Drop a .docx below or extract from the attached file.</div>
+    <div class="statusline" id="msg">Drop a .docx below or click “Choose .docx”.</div>
     <div class="body">
       <div class="card">
         <h2>Dropzone</h2>
         <div id="dropzone" class="drop">Drag & drop a .docx here</div>
         <input id="fileinput" type="file" accept=".docx" style="display:none">
+        <div class="hint">Only the mapped fields will be applied to Monday. You can edit values on the right before applying.</div>
         <hr class="sep">
-        <div class="footer-note">Processing occurs in your browser. No files are sent anywhere except updates to this Monday item’s columns.</div>
+        <div class="footer-note">All processing stays in your browser; only column updates are sent to Monday.</div>
       </div>
       <div class="card">
-        <h2>Preview</h2>
+        <h2>Preview & Modify</h2>
         <div id="preview" class="preview kv-empty">No fields extracted yet.</div>
       </div>
     </div>
@@ -81,14 +87,18 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
-  // ====== Your mapping rules (unchanged) ======
+  // ====== Column mapping (send ONLY these) ======
   const mapping={
     "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
     "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
     "Team_Est":{"type":"text","columnId":"text8"}
   };
 
-  let ctx=null,itemId=null,boardId=null,rawFields=null,updates=null,assetUrl=null,pendingName=null;
+  // ====== Special rules ======
+  const IGNORED = new Set(["Name_Requester","Date_Request"]); // don’t show / don’t use
+  const SPECIAL_USED = new Set(["ENumber","Name_Client","Name_Project","Due_Date","Due_Time","Group"]); // used for title/date/status rules
+
+  let ctx=null,itemId=null,boardId=null,rawFields={},editedFields={},updates=null,assetUrl=null,pendingName=null;
 
   // ====== UI helpers ======
   function setMsg(t){document.getElementById("msg").innerText=t||""}
@@ -97,87 +107,57 @@ document.addEventListener("DOMContentLoaded", () => {
   function normText(s){return (s||"").trim()}
   function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
   function parseTimeToHHMM(s){
-    if(!s)return null;
-    const str=String(s).trim();
+    if(!s)return null;const str=String(s).trim();
     const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
     if(!m){const d=new Date("1970-01-01T"+str);if(!isNaN(d))return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");return null}
-    let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();
-    if(ap==="pm"&&hh<12)hh+=12; if(ap==="am"&&hh===12)hh=0;
-    if(hh<0||hh>23||mm<0||mm>59)return null;
-    return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")
+    let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();if(ap==="pm"&&hh<12)hh+=12;if(ap==="am"&&hh===12)hh=0;
+    if(hh<0||hh>23||mm<0||mm>59)return null;return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")
   }
 
-  // ====== DOCX → XML helpers ======
+  // ====== DOCX unzip & XML parse with DOMParser ======
   async function parseDocxArrayBuffer(ab){
     const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
     const f=zip.file("word/document.xml");
     if(!f) throw new Error("word/document.xml not found (is this a valid .docx?)");
     return await withTimeout(f.async("string"),8000,"Reading document.xml");
   }
-  async function fetchDoc(url){
-    const res=await withTimeout(fetch(url),10000,"Fetching asset");
-    if(!res.ok) throw new Error("HTTP "+res.status);
-    const ab=await withTimeout(res.arrayBuffer(),10000,"Reading asset bytes");
-    return await parseDocxArrayBuffer(ab);
-  }
 
-  // ====== XML extraction with DOMParser (no external libs) ======
   function textFromNode(node){
-    // gather text from this node's subtree
     const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
-    let t="", curr;
-    while((curr=walker.nextNode())) t += curr.nodeValue;
-    return t;
+    let t="", curr; while((curr=walker.nextNode())) t += curr.nodeValue; return t;
   }
 
   function extractSdtWithDOM(documentXml){
-    const dom = new DOMParser().parseFromString(documentXml, "application/xml");
-    // Parser errors?
-    if(dom.getElementsByTagName("parsererror").length){
-      throw new Error("XML parsererror in document.xml");
-    }
-    // Find all content controls: elements with localName === 'sdt'
+    const dom = new DOMParser().parseFromString(documentXml,"application/xml");
+    if(dom.getElementsByTagName("parsererror").length){throw new Error("XML parsererror in document.xml")}
     const all = dom.getElementsByTagName("*");
     const out = {};
     for(let i=0;i<all.length;i++){
-      const el = all[i];
-      if(el.localName !== "sdt") continue;
-
-      // Find sdtPr descendant
-      let pr = null, content = null;
+      const el=all[i]; if(el.localName!=="sdt") continue;
+      let pr=null,content=null;
       for(let j=0;j<el.childNodes.length;j++){
-        const ch = el.childNodes[j];
-        if(ch.nodeType===1 && ch.localName==="sdtPr") pr = ch;
-        if(ch.nodeType===1 && ch.localName==="sdtContent") content = ch;
+        const ch=el.childNodes[j];
+        if(ch.nodeType===1 && ch.localName==="sdtPr") pr=ch;
+        if(ch.nodeType===1 && ch.localName==="sdtContent") content=ch;
       }
-      if(!pr || !content) continue;
-
-      // Tag can be in <w:tag w:val="..."> or <tag val="...">
-      let tag = null;
-      const tags = pr.getElementsByTagName("*");
+      if(!pr||!content) continue;
+      let tag=null;
+      const tags=pr.getElementsByTagName("*");
       for(let k=0;k<tags.length;k++){
-        const t = tags[k];
-        if(t.localName==="tag" || t.localName==="alias"){
+        const t=tags[k];
+        if(t.localName==="tag"||t.localName==="alias"){
           tag = t.getAttribute("w:val") || t.getAttribute("val");
           if(tag) break;
         }
       }
       if(!tag) continue;
-
       const value = normText(textFromNode(content));
-      out[tag] = value;
+      out[tag]=value;
     }
     return out;
   }
 
-  // ====== Business logic ======
-  function previewFields(fields){
-    const el=document.getElementById("preview");
-    const keys=Object.keys(fields||{}).sort();
-    if(!keys.length){el.classList.add("kv-empty");el.innerHTML="No fields extracted yet.";return}
-    el.classList.remove("kv-empty");
-    el.innerHTML=keys.map(k=>`<div class="row"><div class="key">${k}</div><div class="val">${fields[k]||""}</div></div>`).join("");
-  }
+  // ====== Business rules ======
   function buildTitle(fields){
     const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
     const parts=[a,b,c].filter(Boolean);
@@ -192,23 +172,57 @@ document.addEventListener("DOMContentLoaded", () => {
     if(/^Major/i.test(s)) return "MAJ";
     return null;
   }
-  async function buildUpdates(fields){
+
+  // Build the editable preview
+  function renderEditablePreview(fields){
+    const el=document.getElementById("preview");
+    const keys = Object.keys(fields||{})
+      .filter(k => !IGNORED.has(k))   // hide requested fields
+      .sort();
+
+    if(!keys.length){el.classList.add("kv-empty");el.innerHTML="No fields extracted yet.";return}
+    el.classList.remove("kv-empty");
+
+    // Keep a working copy users can edit
+    editedFields = {};
+    keys.forEach(k => editedFields[k] = fields[k]);
+
+    el.innerHTML = keys.map(k => `
+      <div class="row">
+        <div class="key">${k}</div>
+        <div><input class="input" data-key="${k}" value="${(fields[k]||"").replace(/"/g,'&quot;')}"></div>
+      </div>
+    `).join("");
+
+    // Wire change handlers
+    el.querySelectorAll("input.input").forEach(inp=>{
+      inp.addEventListener("input", e=>{
+        const key = e.target.getAttribute("data-key");
+        editedFields[key] = e.target.value;
+      });
+    });
+  }
+
+  async function buildUpdatesFromEdited(fields){
     const vals={};
+
+    // Title from edited fields
     pendingName = buildTitle(fields) || null;
 
-    // date6: always set date; include time if provided
+    // date6: always date; time if present
     const dateIso = normDate(normText(fields.Due_Date));
-    const hhmm = parseTimeToHHMM(normText(fields.Due_Time));
+    const hhmm   = parseTimeToHHMM(normText(fields.Due_Time));
     if(dateIso){ vals["date6"] = hhmm ? {"date":dateIso,"time":hhmm} : {"date":dateIso}; }
 
     // status06 from Group mapping
     const mappedStatus=mapGroupToStatusLabel(fields.Group);
     if(mappedStatus){ vals["status06"]={"label":mappedStatus}; }
 
-    // other mapped fields
+    // Regular mapped columns
     for(const k in mapping){
-      const m=mapping[k], v=fields[k];
-      if(v==null||v==="") continue;
+      const m=mapping[k];
+      const v=fields[k]; // use edited value
+      if(v==null || v==="") continue;
       if(m.type==="text"){ vals[m.columnId]=v; }
       else if(m.type==="numbers"){
         const n=Number(String(v).replace(/[^0-9.\-]/g,""));
@@ -217,17 +231,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     return vals;
   }
+
+  // Apply with clear GraphQL error reporting
   async function applyToMonday(vals){
+    // 1) Column updates
     const s=JSON.stringify(vals).replace(/"/g,'\\"');
-    const m=`mutation($bid:Int!,$iid:Int!){change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:"${s}"){id}}`;
-    await monday.api(m,{variables:{bid:Number(boardId),iid:Number(itemId)}});
+    const m=`mutation($bid:Int!,$iid:Int!){
+      change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:"${s}"){ id }
+    }`;
+    const resp = await monday.api(m,{variables:{bid:Number(boardId),iid:Number(itemId)}});
+    if(resp.errors && resp.errors.length){
+      const msg = resp.errors.map(e=>e.message).join("; ");
+      throw new Error("column_values: " + msg);
+    }
+
+    // 2) Name update (if any)
     if(pendingName){
       try{
-        const m2=`mutation($iid:Int!,$val:String!){change_simple_column_value(item_id:$iid,column_id:"name",value:$val){id}}`;
-        await monday.api(m2,{variables:{iid:Number(itemId),val:JSON.stringify(pendingName)}});
+        const m2=`mutation($iid:Int!,$val:String!){
+          change_simple_column_value(item_id:$iid,column_id:"name",value:$val){ id }
+        }`;
+        const r2 = await monday.api(m2,{variables:{iid:Number(itemId),val:JSON.stringify(pendingName)}});
+        if(r2.errors && r2.errors.length){ throw new Error(r2.errors.map(e=>e.message).join("; ")) }
       }catch(e){
-        const m3=`mutation($iid:Int!,$name:String!){change_item_name(item_id:$iid,name:$name){id}}`;
-        await monday.api(m3,{variables:{iid:Number(itemId),name:pendingName}});
+        const m3=`mutation($iid:Int!,$name:String!){ change_item_name(item_id:$iid,name:$name){ id } }`;
+        const r3 = await monday.api(m3,{variables:{iid:Number(itemId),name:pendingName}});
+        if(r3.errors && r3.errors.length){ throw new Error("change_item_name: " + r3.errors.map(er=>er.message).join("; ")) }
       }
     }
   }
@@ -252,11 +281,31 @@ document.addEventListener("DOMContentLoaded", () => {
     if(!/\.docx$/i.test(f.name)){setMsg("Please drop a .docx file");return}
     handleLocalFile(f);
   });
-  document.getElementById("extract").onclick=handleAttachment;
+
+  // (extract button intentionally hidden)
+
   document.getElementById("apply").onclick=async()=>{
-    if(!updates && !buildTitle(rawFields)){ setMsg("Nothing to apply"); return }
-    setMsg("Updating item…");
-    try{ await applyToMonday(updates||{}); setMsg("Done") } catch(e){ showErr(e,"Update failed") }
+    try{
+      if(!editedFields || Object.keys(editedFields).length===0){ setMsg("Nothing to apply"); return }
+      setMsg("Building updates…");
+      // Merge: start from edited view but still suppress ignored keys
+      const working = {};
+      Object.keys(editedFields).forEach(k=>{
+        if(!IGNORED.has(k)) working[k] = editedFields[k];
+      });
+
+      updates = await buildUpdatesFromEdited(working);
+
+      if(Object.keys(updates).length===0 && !buildTitle(working)){
+        setMsg("Nothing mappable found"); return;
+      }
+
+      setMsg("Updating item…");
+      await applyToMonday(updates);
+      setMsg("Done");
+    }catch(e){
+      showErr(e, "Update failed");
+    }
   };
 
   // ====== Flows ======
@@ -266,36 +315,21 @@ document.addEventListener("DOMContentLoaded", () => {
       const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");
       const xml=await parseDocxArrayBuffer(ab);
       setMsg("Parsing fields…");
-      rawFields=extractSdtWithDOM(xml);
-      previewFields(rawFields);
-      updates=await buildUpdates(rawFields);
-      document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0 && !buildTitle(rawFields));
-      setMsg((Object.keys(updates||{}).length || buildTitle(rawFields))? "Ready to apply" : "Nothing mappable found");
+      rawFields = extractSdtWithDOM(xml);
+
+      // Build filtered view for editing
+      const filtered = {};
+      Object.keys(rawFields).forEach(k=>{
+        if(!IGNORED.has(k)) filtered[k] = rawFields[k];
+      });
+
+      renderEditablePreview(filtered);
+
+      // Enable Apply if we have anything or a computed title/date/status is possible
+      const hasAny = Object.keys(filtered).length>0;
+      document.getElementById("apply").disabled = !hasAny;
+      setMsg(hasAny? "Ready to apply" : "Nothing mappable found");
     }catch(e){ showErr(e,"Could not read .docx") }
-  }
-
-  async function getAssetUrl(){
-    const q=`query($itemIds:[Int!]){items(ids:$itemIds){id assets{id name public_url}}}`;
-    const r=await monday.api(q,{variables:{itemIds:[itemId]}});
-    const assets=((r||{}).data||{}).items?.[0]?.assets||[];
-    const doc=assets.find(a=>/\.docx$/i.test(a.name))||assets[0];
-    return doc?doc.public_url:null;
-  }
-
-  async function handleAttachment(){
-    try{
-      setMsg("Fetching attachment…");
-      assetUrl=await getAssetUrl();
-      if(!assetUrl){ setMsg("No attachment found in this item"); return }
-      setMsg("Reading .docx…");
-      const xml=await fetchDoc(assetUrl);
-      setMsg("Parsing fields…");
-      rawFields=extractSdtWithDOM(xml);
-      previewFields(rawFields);
-      updates=await buildUpdates(rawFields);
-      document.getElementById("apply").disabled=(Object.keys(updates||{}).length===0 && !buildTitle(rawFields));
-      setMsg((Object.keys(updates||{}).length || buildTitle(rawFields))? "Ready to apply" : "Nothing mappable found");
-    }catch(e){ showErr(e,"Attachment error") }
   }
 
   // Surface unexpected global errors
