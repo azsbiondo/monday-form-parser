@@ -119,7 +119,7 @@ body{
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
-  // === Column mapping (incl. PM Lead -> text0) ===
+  // === Column mapping (includes PM Lead -> text0) ===
   const mapping={
     "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
     "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
@@ -184,11 +184,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return res;
     }catch(e){
-      // Monday SDK often throws a bare Error("Graphql validation errors")
-      // Dump everything we can to devtools:
       console.error(`[GQL:${label}] exception`, e);
       const err = new Error(e?.message || "GraphQL error");
-      // attach best-effort extras for the status line
       try{ err.extra = e?.errors? JSON.stringify(e.errors) : (e?.response? JSON.stringify(e.response) : ""); }catch(_){}
       throw err;
     }
@@ -334,15 +331,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return name;
   }
 
-  // === Schema fetch + validation ===
+  // === Schema fetch + validation (IDs as strings) ===
   async function fetchBoardSchema(){
-    const q=`query($bid:[Int!]){
+    const q=`query($bid:[ID!]){
       boards(ids:$bid){
         id
         columns{id title type settings_str}
       }
     }`;
-    const res = await runGql("schema", q, {bid:[Number(boardId)]});
+    const res = await runGql("schema", q, {bid:[String(boardId)]});
     const cols = (res.data?.boards?.[0]?.columns)||[];
     const byId = {}; cols.forEach(c=>byId[c.id]=c);
     let statusLabels=[];
@@ -369,7 +366,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       if(colId==="status06"){
         const label = cleaned[colId]?.label;
-        if(label && !schema.statusLabels.includes(label)){
+        if(label && !(schema.statusLabels||[]).includes(label)){
           warnings.push(`Status label '${label}' not in status06; skipping.`);
           delete cleaned[colId];
         }
@@ -384,43 +381,42 @@ document.addEventListener("DOMContentLoaded", () => {
     return cleaned;
   }
 
-  // === Mutations (only change_item_name for title) ===
+  // === Mutations (IDs as strings) ===
   async function applyToMonday(vals, nameCandidate, scopeText){
     if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
     const cleaned = validatePayload(vals, boardSchema);
 
-    // 1) change_multiple_column_values
+    // 1) change_multiple_column_values (JSON! first, fallback to string)
     if(Object.keys(cleaned).length>0){
-      const mVar=`mutation($bid:Int!,$iid:Int!,$vals: JSON!){
+      const mVar=`mutation($bid:ID!,$iid:ID!,$vals: JSON!){
         change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$vals){ id }
       }`;
       try{
-        await runGql("set-columns(JSON)", mVar, {bid:Number(boardId),iid:Number(itemId),vals:cleaned});
+        await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
       }catch(err){
-        // Fallback to stringified payload (legacy)
         const s = JSON.stringify(cleaned);
-        const mStr=`mutation($bid:Int!,$iid:Int!,$s:String!){
+        const mStr=`mutation($bid:ID!,$iid:ID!,$s:String!){
           change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$s){ id }
         }`;
-        await runGql("set-columns(string)", mStr, {bid:Number(boardId),iid:Number(itemId),s});
+        await runGql("set-columns(string)", mStr, {bid:String(boardId),iid:String(itemId),s});
       }
     }
 
-    // 2) change_item_name (skip change_simple_column_value entirely)
+    // 2) change_item_name
     if(nameCandidate){
-      const mName=`mutation($iid:Int!,$name:String!){
+      const mName=`mutation($iid:ID!,$name:String!){
         change_item_name(item_id:$iid,name:$name){ id }
       }`;
-      await runGql("set-name", mName, {iid:Number(itemId),name:nameCandidate});
+      await runGql("set-name", mName, {iid:String(itemId),name:nameCandidate});
     }
 
     // 3) create_update for Scope
     if(scopeText && scopeText.trim()){
       const body=`Scope: ${scopeText.trim()}`;
-      const mUpd=`mutation($iid:Int!,$body:String!){
+      const mUpd=`mutation($iid:ID!,$body:String!){
         create_update(item_id:$iid, body:$body){ id }
       }`;
-      await runGql("post-scope", mUpd, {iid:Number(itemId),body});
+      await runGql("post-scope", mUpd, {iid:String(itemId),body});
     }
   }
 
