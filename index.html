@@ -67,8 +67,7 @@ body{
                     linear-gradient(135deg, var(--field-text) 50%, transparent 50%),
                     linear-gradient(to right, transparent, transparent);
   background-position: calc(100% - 20px) calc(1em + 2px), calc(100% - 15px) calc(1em + 2px), 100% 0;
-  background-size: 5px 5px, 5px 5px, 2.5em 2.5em;
-  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px, 2.5em 2.5em; background-repeat: no-repeat;
 }
 .select option{background-color:var(--option-bg); color:var(--option-text)}
 .textarea{min-height:80px;resize:vertical}
@@ -78,7 +77,6 @@ body{
 .kv-empty{color:var(--muted)}
 .kpi{display:flex;gap:10px;flex-wrap:wrap}
 .kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
-.footer-note{font-size:11px;color:var(--muted);padding:10px 14px 16px 14px}
 .hide{display:none!important}
 .warn{color:#ffcc66}
 </style>
@@ -108,7 +106,6 @@ body{
         <h2>Dropzone</h2>
         <div id="dropzone" class="drop">Drag & drop a .docx here</div>
         <input id="fileinput" type="file" accept=".docx" style="display:none">
-        <div class="footer-note">Processing is local; we only send column updates (and the Scope comment) to Monday.</div>
       </div>
       <div class="card">
         <h2>Preview & Modify</h2>
@@ -149,16 +146,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let ctx=null,itemId=null,boardId=null;
   let edited={}, includeTime=false;
-  let boardSchema=null; // fetched columns + status labels
+  let boardSchema=null;
 
   // === Helpers ===
   const $ = sel => document.querySelector(sel);
   function setMsg(t){$("#msg").innerText=t||""}
   function showErr(e,label){
-    let msg = (e && e.message) ? e.message : String(e||"Unknown error");
-    // If server gave extra detail, show it
-    if(e && e.raw) msg += " | " + e.raw;
-    setMsg(label+": "+msg);
+    const msg=(e && e.message)? e.message : String(e||"Unknown error");
+    const extra=(e && e.extra)? " | "+e.extra : "";
+    setMsg(`${label}: ${msg}${extra}`);
     console.error(label, e);
   }
   function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
@@ -174,7 +170,31 @@ document.addEventListener("DOMContentLoaded", () => {
     return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")
   }
 
-  // Unzip + DOMParser for .docx
+  // === GQL runner with deep logging ===
+  async function runGql(label, query, variables){
+    try{
+      console.log(`[GQL:${label}]`, {query, variables});
+      const res = await monday.api(query, { variables });
+      if(res?.errors?.length){
+        const msg = res.errors.map(e=>e.message).join("; ");
+        console.error(`[GQL:${label}] errors`, res.errors);
+        const err = new Error(msg || "GraphQL errors");
+        err.extra = JSON.stringify(res.errors);
+        throw err;
+      }
+      return res;
+    }catch(e){
+      // Monday SDK often throws a bare Error("Graphql validation errors")
+      // Dump everything we can to devtools:
+      console.error(`[GQL:${label}] exception`, e);
+      const err = new Error(e?.message || "GraphQL error");
+      // attach best-effort extras for the status line
+      try{ err.extra = e?.errors? JSON.stringify(e.errors) : (e?.response? JSON.stringify(e.response) : ""); }catch(_){}
+      throw err;
+    }
+  }
+
+  // === Unzip + DOMParser for .docx ===
   async function parseDocxArrayBuffer(ab){
     const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
     const f=zip.file("word/document.xml");
@@ -215,7 +235,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  // Pre-translate Group
+  // === Pre-translate Group ===
   function translateGroupToOption(v){
     if(!v) return "";
     const s=String(v).trim();
@@ -227,7 +247,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return "";
   }
 
-  // UI render
+  // === Editable preview ===
   function renderEditablePreview(source){
     const el=$("#preview"); el.innerHTML=""; el.classList.remove("kv-empty");
     edited = {};
@@ -287,7 +307,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#apply").disabled = false;
   }
 
-  // Build payload
+  // === Build payload ===
   function buildColumnUpdates(){
     const vals={};
     const d = edited.Due_Date || "";
@@ -303,16 +323,18 @@ document.addEventListener("DOMContentLoaded", () => {
         if(!isNaN(n)) vals[m.columnId]=String(n);
       }
     }
+    console.log("[Payload] column_values", vals);
     return vals;
   }
-
   function buildItemNameFromEdited(){
     const a=normText(edited.ENumber), b=normText(edited.Name_Client), c=normText(edited.Name_Project);
     const parts=[a,b,c].filter(Boolean);
-    return parts.length? parts.join(" ") : null;
+    const name = parts.length? parts.join(" ") : null;
+    console.log("[Payload] item_name", name);
+    return name;
   }
 
-  // === Schema fetch & validation ===
+  // === Schema fetch + validation ===
   async function fetchBoardSchema(){
     const q=`query($bid:[Int!]){
       boards(ids:$bid){
@@ -320,11 +342,9 @@ document.addEventListener("DOMContentLoaded", () => {
         columns{id title type settings_str}
       }
     }`;
-    const res = await monday.api(q,{variables:{bid:[Number(boardId)]}});
-    if(res.errors && res.errors.length){ throw new Error(res.errors.map(e=>e.message).join("; ")) }
+    const res = await runGql("schema", q, {bid:[Number(boardId)]});
     const cols = (res.data?.boards?.[0]?.columns)||[];
     const byId = {}; cols.forEach(c=>byId[c.id]=c);
-    // status labels for status06
     let statusLabels=[];
     const st = byId["status06"];
     if(st && st.settings_str){
@@ -333,25 +353,24 @@ document.addEventListener("DOMContentLoaded", () => {
         statusLabels = (s.labels || Object.values(s.labels_groups?.[0]?.labels||{})).filter(Boolean);
       }catch(_){}
     }
+    console.log("[Schema] columns", byId);
+    console.log("[Schema] status06 labels", statusLabels);
     return {byId, statusLabels};
   }
-
   function validatePayload(vals, schema){
     const warnings=[];
     const cleaned = {...vals};
-
-    // Ensure columns exist & types are compatible
     for(const colId of Object.keys(cleaned)){
       const col = schema.byId[colId];
       if(!col){
-        warnings.push(`Column '${colId}' not found on this board; skipping.`);
+        warnings.push(`Column '${colId}' not found; skipping.`);
         delete cleaned[colId];
         continue;
       }
       if(colId==="status06"){
         const label = cleaned[colId]?.label;
         if(label && !schema.statusLabels.includes(label)){
-          warnings.push(`Status label '${label}' does not exist in status06; skipping.`);
+          warnings.push(`Status label '${label}' not in status06; skipping.`);
           delete cleaned[colId];
         }
       }
@@ -360,59 +379,48 @@ document.addEventListener("DOMContentLoaded", () => {
         if(!v || !v.date){ warnings.push(`Date for 'date6' missing/invalid; skipping.`); delete cleaned[colId]; }
       }
     }
-
-    return {cleaned, warnings};
+    if(warnings.length){ setMsg("Note: "+warnings.join(" ")); }
+    console.log("[Payload] cleaned", cleaned, "warnings:", warnings);
+    return cleaned;
   }
 
-  // === Mutations with robust error surfacing + fallback ===
+  // === Mutations (only change_item_name for title) ===
   async function applyToMonday(vals, nameCandidate, scopeText){
-    // Preflight schema if not cached
     if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
-    const {cleaned, warnings} = validatePayload(vals, boardSchema);
-    if(warnings.length){ setMsg(`Note: ${warnings.join(" ")}`); }
+    const cleaned = validatePayload(vals, boardSchema);
 
     // 1) change_multiple_column_values
     if(Object.keys(cleaned).length>0){
-      // Try JSON! variable first
       const mVar=`mutation($bid:Int!,$iid:Int!,$vals: JSON!){
         change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$vals){ id }
       }`;
-      let resp = await monday.api(mVar,{variables:{bid:Number(boardId),iid:Number(itemId),vals:cleaned}});
-      if(resp.errors && resp.errors.length){
-        // retry with stringified payload (legacy behavior)
+      try{
+        await runGql("set-columns(JSON)", mVar, {bid:Number(boardId),iid:Number(itemId),vals:cleaned});
+      }catch(err){
+        // Fallback to stringified payload (legacy)
         const s = JSON.stringify(cleaned);
         const mStr=`mutation($bid:Int!,$iid:Int!,$s:String!){
           change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$s){ id }
         }`;
-        resp = await monday.api(mStr,{variables:{bid:Number(boardId),iid:Number(itemId),s}});
-        if(resp.errors && resp.errors.length){
-          const raw = JSON.stringify(resp.errors);
-          const err = new Error(resp.errors.map(e=>e.message).join("; ")); err.raw = raw; throw err;
-        }
+        await runGql("set-columns(string)", mStr, {bid:Number(boardId),iid:Number(itemId),s});
       }
     }
 
-    // 2) item name
+    // 2) change_item_name (skip change_simple_column_value entirely)
     if(nameCandidate){
-      try{
-        const m2=`mutation($iid:Int!,$val:String!){
-          change_simple_column_value(item_id:$iid,column_id:"name",value:$val){ id }
-        }`;
-        const r2 = await monday.api(m2,{variables:{iid:Number(itemId),val:JSON.stringify(nameCandidate)}});
-        if(r2.errors && r2.errors.length){ throw new Error(r2.errors.map(e=>e.message).join("; ")) }
-      }catch(e){
-        const m3=`mutation($iid:Int!,$name:String!){ change_item_name(item_id:$iid,name:$name){ id } }`;
-        const r3 = await monday.api(m3,{variables:{iid:Number(itemId),name:nameCandidate}});
-        if(r3.errors && r3.errors.length){ const err=new Error(r3.errors.map(er=>er.message).join("; ")); err.raw=JSON.stringify(r3.errors); throw err; }
-      }
+      const mName=`mutation($iid:Int!,$name:String!){
+        change_item_name(item_id:$iid,name:$name){ id }
+      }`;
+      await runGql("set-name", mName, {iid:Number(itemId),name:nameCandidate});
     }
 
-    // 3) scope comment
+    // 3) create_update for Scope
     if(scopeText && scopeText.trim()){
       const body=`Scope: ${scopeText.trim()}`;
-      const m4=`mutation($iid:Int!,$body:String!){ create_update(item_id:$iid, body:$body){ id } }`;
-      const r4 = await monday.api(m4,{variables:{iid:Number(itemId),body}});
-      if(r4.errors && r4.errors.length){ const err=new Error(r4.errors.map(er=>er.message).join("; ")); err.raw=JSON.stringify(r4.errors); throw err; }
+      const mUpd=`mutation($iid:Int!,$body:String!){
+        create_update(item_id:$iid, body:$body){ id }
+      }`;
+      await runGql("post-scope", mUpd, {iid:Number(itemId),body});
     }
   }
 
@@ -469,6 +477,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }catch(e){ showErr(e,"Could not read .docx") }
   }
 
+  // Global error surfacing
   window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
 });
 </script>
