@@ -2,202 +2,128 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>monday updater (JSON first, String fallback)</title>
+  <title>monday updater (fixed mondaySdk init)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; padding: 24px; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; }
     button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ddd; cursor: pointer; }
-    pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow: auto; }
   </style>
+  <!-- Load the UMD build; it exposes window.mondaySdk -->
+  <script src="https://unpkg.com/monday-sdk-js/dist/main.js" defer></script>
 </head>
 <body>
   <h1>Update item columns</h1>
-  <p>This demo updates the current item via <code>change_multiple_column_values</code>.<br/>JSON path first, then String fallback if the API yells.</p>
+  <p>JSON path first; falls back to String if needed.</p>
   <button id="applyBtn">Apply to monday</button>
 
-  <h3>Console tips</h3>
-  <ul>
-    <li>Watch for logs like <code>[GQL:set-columns(JSON)]</code> and <code>[Retry] String!</code>.</li>
-    <li>Network tab → request payload → <code>variables.vals</code> should be an <em>object</em> in JSON mode.</li>
-  </ul>
-
-  <script src="https://unpkg.com/monday-sdk-js/dist/main.js"></script>
   <script>
-    // --- CONFIG AREA --------------------------------------------------------
-    // If you use a personal token in a sandbox, put it here (NOT recommended for prod):
-    const HARDCODED_TOKEN = ""; // e.g. "eyJhbGciOi..."  Leave empty to use session token from SDK.
+    document.addEventListener("DOMContentLoaded", () => {
+      // ✅ Correct: window.mondaySdk() (NOT window.mondaySDK)
+      const monday = window.mondaySdk();
 
-    // Build the values you want to write. Replace with your real payload.
-    // Keys are column IDs; values are *raw objects* as monday expects (not stringified).
-    // Example sets:
-    //  - a Status column (id: "status52") to label index 2 (depends on your board labels)
-    //  - a Date column (id: "date6") to an ISO date string
-    function buildColumnValues() {
-      const isoToday = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      // ------- config you can tweak -------
+      const HARDCODED_TOKEN = ""; // leave empty to use session token
 
-      // NOTE: adapt this to your real columns/structure.
-      return {
-        status52: { index: 2 },          // <- a status column value (label index)
-        date6: { date: isoToday },       // <- a date column value
-        // more columns here...
-      };
-    }
-    // -----------------------------------------------------------------------
-
-    const monday = window.mondaySDK();
-    let ctx = null;
-
-    async function getAuthToken() {
-      if (HARDCODED_TOKEN) return HARDCODED_TOKEN;
-      // Prefer session token provided to client apps
-      const { data: token } = await monday.get("sessionToken");
-      return token;
-    }
-
-    async function getContext() {
-      const { data } = await monday.get("context");
-      // Expect either item view context or board view context
-      // itemId may be missing if you’re not in an item view.
-      return {
-        boardId: data?.boardId || data?.boardIds?.[0],
-        itemId: data?.itemId,
-      };
-    }
-
-    // ---- IMPORTANT: wrapper that does NOT stringify `variables` prematurely
-    async function runGql(tag, query, variables) {
-      const token = await getAuthToken();
-      const body = { query, variables }; // keep variables as a plain object
-      const res = await fetch("https://api.monday.com/v2", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": token,
-        },
-        body: JSON.stringify(body), // stringify once HERE
-      });
-
-      const json = await res.json();
-      if (json.errors && json.errors.length) {
-        console.log("There was an error in response from monday.com graphql API: ", json.errors);
-        const e = new Error("Graphql validation errors");
-        e.graphQLErrors = json.errors;
-        throw e;
+      function buildColumnValues() {
+        const isoToday = new Date().toISOString().slice(0, 10);
+        return {
+          status52: { index: 2 },    // change to your column ids/values
+          date6: { date: isoToday },
+        };
       }
-      console.log(`[GQL:${tag}]`, json);
-      return json.data;
-    }
+      // ------------------------------------
 
-    // optional helpers to inspect the board/item/columns if you need them
-    async function fetchSchema(boardId) {
-      const q = `
-        query ($bid: [ID!]) {
-          boards (ids: $bid) {
-            id
-            name
-            columns { id title type settings_str }
-          }
-        }`;
-      return runGql("schema", q, { bid: [String(boardId)] });
-    }
+      async function getAuthToken() {
+        if (HARDCODED_TOKEN) return HARDCODED_TOKEN;
+        const { data: token } = await monday.get("sessionToken");
+        return token;
+      }
 
-    async function fetchItem(boardId, itemId) {
-      const q = `
-        query ($bid: [ID!], $iid: [ID!]) {
-          items (ids: $iid) {
-            id
-            name
-            board { id }
-            column_values { id text value }
-          }
-        }`;
-      return runGql("item", q, { bid: [String(boardId)], iid: [String(itemId)] });
-    }
+      async function getContext() {
+        const { data } = await monday.get("context");
+        return {
+          boardId: data?.boardId || data?.boardIds?.[0],
+          itemId: data?.itemId,
+        };
+      }
 
-    // --- The update logic (JSON first, String fallback)
-    async function applyToMonday() {
-      try {
-        if (!ctx) ctx = await getContext();
-        const { boardId, itemId } = ctx || {};
-        if (!boardId || !itemId) {
-          alert("Missing boardId or itemId in context. Open this app inside an item.");
-          return;
+      async function runGql(tag, query, variables) {
+        const token = await getAuthToken();
+        const res = await fetch("https://api.monday.com/v2", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": token,
+          },
+          body: JSON.stringify({ query, variables }),
+        });
+        const json = await res.json();
+        if (json.errors?.length) {
+          console.log("There was an error in response from monday.com graphql API: ", json.errors);
+          const e = new Error("Graphql validation errors");
+          e.graphQLErrors = json.errors;
+          throw e;
         }
+        console.log(`[GQL:${tag}]`, json);
+        return json.data;
+      }
 
-        // Build the *object* payload
-        const cleaned = buildColumnValues();
-
-        console.log("[Sanity] typeof cleaned =", typeof cleaned, "sample key:", Object.keys(cleaned)[0]);
-        console.log("[Payload] cleaned object:", cleaned);
-
-        // --- JSON mutation (preferred)
-        const mJson = `
-          mutation($bid: ID!, $iid: ID!, $vals: JSON!) {
-            change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $vals) { id }
-          }`;
-
+      async function applyToMonday() {
         try {
-          await runGql("set-columns(JSON)", mJson, {
+          const { boardId, itemId } = await getContext();
+          if (!boardId || !itemId) {
+            alert("Open this inside an item so I can read boardId/itemId.");
+            return;
+          }
+
+          const cleaned = buildColumnValues();
+          console.log("[Payload] cleaned object:", cleaned);
+
+          // --- JSON first
+          const mJson = `
+            mutation($bid: ID!, $iid: ID!, $vals: JSON!) {
+              change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $vals) { id }
+            }`;
+          try {
+            await runGql("set-columns(JSON)", mJson, {
+              bid: String(boardId),
+              iid: String(itemId),
+              vals: cleaned, // object, not string
+            });
+            alert("Update succeeded via JSON!");
+            return;
+          } catch (err) {
+            const msg = (err && err.message) || "";
+            const more = (err?.graphQLErrors || []).map(e => e?.message).join(" | ");
+            console.log("JSON path failed:", msg, more);
+
+            const typeIssue =
+              /expecting type "JSON!"/i.test(msg + " " + more) ||
+              /Variable .* of type "String!" used in position expecting type "JSON!"/i.test(msg + " " + more) ||
+              /INTERNAL_SERVER_ERROR/i.test(more);
+
+            if (!typeIssue) throw err;
+          }
+
+          // --- Fallback: String
+          const mStr = `
+            mutation($bid: ID!, $iid: ID!, $s: String!) {
+              change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $s) { id }
+            }`;
+          await runGql("set-columns(String)", mStr, {
             bid: String(boardId),
             iid: String(itemId),
-            vals: cleaned, // OBJECT here ✅
+            s: JSON.stringify(cleaned),
           });
-          alert("Update succeeded via JSON!");
-          return;
-        } catch (err) {
-          const msg = (err && err.message) || "";
-          const more = (err && err.graphQLErrors || []).map(e => e && e.message).join(" | ");
-          console.log("JSON path failed:", msg, more);
-
-          const looksLikeTypeIssue =
-            /expecting type "JSON!"/i.test(msg + " " + more) ||
-            /Variable .* of type "String!" used in position expecting type "JSON!"/i.test(msg + " " + more) ||
-            /INTERNAL_SERVER_ERROR/i.test(more); // monday sometimes wraps type issues as 500
-
-          if (!looksLikeTypeIssue) throw err;
+          alert("Update succeeded via String fallback!");
+        } catch (e) {
+          console.error("Update failed:", e);
+          alert("Update failed. Check console.");
         }
-
-        // --- Fallback: String mutation (legacy behavior)
-        const mStr = `
-          mutation($bid: ID!, $iid: ID!, $s: String!) {
-            change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $s) { id }
-          }`;
-
-        const s = JSON.stringify(cleaned); // STRING here ✅
-        console.log("[Retry] String! payload:", s);
-        await runGql("set-columns(String)", mStr, {
-          bid: String(boardId),
-          iid: String(itemId),
-          s,
-        });
-
-        alert("Update succeeded via String fallback!");
-      } catch (e) {
-        console.error("Update failed:", e);
-        alert("Update failed. See console for details.");
       }
-    }
 
-    // Wire up UI
-    document.getElementById("applyBtn").addEventListener("click", applyToMonday);
-
-    // Optional: load and log context + schema on startup (handy while you wire IDs)
-    (async function boot() {
-      try {
-        ctx = await getContext();
-        console.log("[Context]", ctx);
-        if (ctx?.boardId) {
-          const schema = await fetchSchema(ctx.boardId);
-          console.log("[Schema]", schema);
-        }
-        if (ctx?.boardId && ctx?.itemId) {
-          const item = await fetchItem(ctx.boardId, ctx.itemId);
-          console.log("[Item]", item);
-        }
-      } catch (e) {
-        console.warn("Boot helpers failed (non-fatal):", e);
-      }
-    })();
+      document.getElementById("applyBtn").addEventListener("click", applyToMonday);
+    });
   </script>
 </body>
 </html>
