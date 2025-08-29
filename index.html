@@ -2,71 +2,142 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Monday Update (status06 + date6)</title>
+  <title>Update status06 & date6</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
+  <!-- Official SDK (do NOT self-host; avoids CORS) -->
+  <script src="https://unpkg.com/monday-sdk-js/dist/main.js"></script>
   <style>
-    body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
+    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
+    label{display:inline-block;margin:6px 0}
+    input,select{padding:8px;border-radius:8px;border:1px solid #ccc}
     button{padding:10px 14px;border:0;border-radius:8px;background:#1f7a54;color:#fff;cursor:pointer}
     pre{background:#f6f6f6;padding:10px;border-radius:8px;overflow:auto}
-    .warn{color:#b54708}
-    .ok{color:#117a37}
     .muted{color:#555}
+    .ok{color:#117a37}
+    .warn{color:#b54708}
   </style>
 </head>
 <body>
-  <h2>Apply to this item (status06 + date6)</h2>
-  <div class="muted">This page validates your columns first, then updates.</div>
+  <h2>Update this item</h2>
+  <div class="muted">Columns: <b>status06</b> (Status), <b>date6</b> (Date)</div>
 
-  <div style="margin-top:12px;">
-    <label>Status label to set (status06): <input id="statusInput" placeholder="e.g. SPC / ENG / MAJ / TBD" /></label>
+  <div style="margin-top:10px">
+    <label>Status label (status06): <input id="statusLabel" placeholder="e.g. Done / In Progress / TBD" /></label>
   </div>
-  <div style="margin-top:8px;">
-    <label>Date to set (date6): <input id="dateInput" type="date" /></label>
-    <label style="margin-left:12px;">Time (optional): <input id="timeInput" type="time" step="1" placeholder="HH:MM or HH:MM:SS" /></label>
+  <div>
+    <label>Date (date6): <input id="dateOnly" type="date" /></label>
+    <label style="margin-left:10px">Time (optional): <input id="timeHHMM" type="time" step="1" placeholder="HH:MM or HH:MM:SS" /></label>
   </div>
-  <div style="margin-top:12px;">
-    <button id="applyBtn">Apply</button>
+  <div style="margin-top:10px">
+    <button id="btn">Apply</button>
   </div>
 
-  <div id="log" style="margin-top:16px;"></div>
+  <div id="out" style="margin-top:16px"></div>
 
 <script>
 const monday = window.mondaySdk();
-let ctx = null;
-
-const log = (html, cls="") => {
-  const el = document.getElementById("log");
-  const p = document.createElement("div");
-  p.className = cls;
-  p.innerHTML = html;
-  el.appendChild(p);
+const out = (html, cls="")=>{
+  const d=document.getElementById("out"), x=document.createElement("div");
+  x.className=cls; x.innerHTML=html; d.appendChild(x);
 };
+const j = (o)=>JSON.stringify(o,null,2);
 
-const asJSON = (obj) => JSON.stringify(obj, null, 2);
-
-monday.listen("context", ({data}) => {
-  ctx = data;
-  log(`<b>[Context]</b> ${asJSON({boardId: ctx.boardId, itemId: ctx.itemId})}`);
+let context=null;
+monday.listen("context", ({data})=>{
+  context=data;
+  out(`<b>[Context]</b> ${j({boardId:data.boardId, itemId:data.itemId})}`,"muted");
 });
 
-async function getBoardColumns(boardId) {
-  const q = `
-    query GetColumns($bid: [ID!]) {
-      boards (ids: $bid) {
+async function getBoardColumns(boardId){
+  const q=`
+    query($ids:[ID!]){
+      boards(ids:$ids){
         id
-        columns {
-          id
-          title
-          type
-          settings_str
-        }
+        columns { id title type settings_str }
       }
-    }
-  `;
-  const r = await monday.api(q, { variables: { bid: String(boardId) }});
-  if (r.errors || r.error) throw new Error((r.errors?.[0]?.message) || r.error?.message || "Failed to fetch columns");
-  return r.data.boards?.[0]?.columns || [];
+    }`;
+  const r = await monday.api(q,{variables:{ids:String(boardId)}});
+  if(r.errors) throw new Error(r.errors[0].message);
+  return r.data.boards?.[0]?.columns||[];
 }
 
-function readStatusLabels(settings_str_
+function parseStatusLabels(settings_str){
+  try{
+    const s=JSON.parse(settings_str||"{}");
+    const raw = s.labels || s.labels_positions || {};
+    return Object.values(raw).filter(Boolean); // array of label strings
+  }catch{ return []; }
+}
+
+function dateValueForColumn(settings_str, dateISO, timeRaw){
+  // If the Date column does NOT have time enabled, you MUST NOT send time.
+  let timeEnabled=false;
+  try{
+    const s=JSON.parse(settings_str||"{}");
+    timeEnabled = Boolean(s.time || s.enable_time || s.allow_time);
+  }catch{}
+  if(!dateISO) return null;
+  if(!timeEnabled) return { date: dateISO };           // safest
+  if(!timeRaw)   return { date: dateISO, time: "00:00:00" };
+  // normalize time to HH:mm:ss
+  const p = timeRaw.split(":");
+  const hh = p[0]||"00", mm=p[1]||"00", ss=(p[2]!==undefined)?p[2]:"00";
+  return { date: dateISO, time: `${hh}:${mm}:${ss}` };
+}
+
+async function changeValues(boardId,itemId,valsObj){
+  const m = `
+    mutation($bid:ID!, $iid:ID!, $vals:JSON!){
+      change_multiple_column_values(board_id:$bid, item_id:$iid, column_values:$vals){ id }
+    }`;
+  const v = { bid:String(boardId), iid:String(itemId), vals: JSON.stringify(valsObj) };
+  out(`<details><summary>Sending column_values</summary><pre>${j(valsObj)}</pre></details>`,"muted");
+  const r = await monday.api(m,{variables:v});
+  if(r.errors) throw new Error(r.errors[0].message);
+  return r.data.change_multiple_column_values?.id || "ok";
+}
+
+document.getElementById("btn").addEventListener("click", async ()=>{
+  document.getElementById("out").innerHTML="";
+  try{
+    if(!context?.boardId||!context?.itemId) throw new Error("Open this page inside a Monday item view.");
+    const boardId=context.boardId, itemId=context.itemId;
+
+    const cols = await getBoardColumns(boardId);
+    const statusCol = cols.find(c=>c.id==="status06");
+    const dateCol   = cols.find(c=>c.id==="date6");
+    if(!dateCol) throw new Error('Column "date6" not found.');
+    if(!statusCol) out(`<div class="warn">Column "status06" not found (status update will be skipped).</div>`,"warn");
+
+    out(`<b>Columns found</b> ${j({
+      status06: statusCol?{id:statusCol.id,title:statusCol.title,type:statusCol.type}:null,
+      date6: {id:dateCol.id,title:dateCol.title,type:dateCol.type}
+    })}`,"muted");
+
+    // Build payload
+    const vals = {};
+    const inputLabel = (document.getElementById("statusLabel").value||"").trim();
+    if(statusCol && inputLabel){
+      const allowed = parseStatusLabels(statusCol.settings_str);
+      out(`<details><summary>status06 labels</summary><pre>${j(allowed)}</pre></details>`,"muted");
+      const match = allowed.find(l => String(l).toLowerCase()===inputLabel.toLowerCase());
+      if(match) vals["status06"] = { label: match };
+      else out(`<div class="warn">Label "${inputLabel}" not found on status06. Skipping status.</div>`,"warn");
+    }
+
+    const dateISO = (document.getElementById("dateOnly").value||"").trim();     // YYYY-MM-DD
+    const timeRaw = (document.getElementById("timeHHMM").value||"").trim();     // HH:MM[:SS]
+    const dateVal = dateValueForColumn(dateCol.settings_str, dateISO, timeRaw);
+    if(dateVal) vals["date6"]=dateVal;
+
+    // Send
+    await changeValues(boardId,itemId,vals);
+    out(`<b class="ok">✅ Update succeeded.</b>`,"ok");
+
+  }catch(e){
+    out(`<b class="warn">❌ Update failed:</b> ${e?.message||e}`,"warn");
+  }
+});
+</script>
+</body>
+</html>
