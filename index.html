@@ -2,119 +2,71 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Update Monday Item</title>
+  <title>Monday Update (status06 + date6)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Monday SDK -->
   <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px; }
-    button { padding: 10px 14px; border-radius: 8px; border: 0; cursor: pointer; }
-    .ok { background: #0fa958; color: white; }
-    .warn { background: #f2c94c; }
-    pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow: auto; }
+    body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
+    button{padding:10px 14px;border:0;border-radius:8px;background:#1f7a54;color:#fff;cursor:pointer}
+    pre{background:#f6f6f6;padding:10px;border-radius:8px;overflow:auto}
+    .warn{color:#b54708}
+    .ok{color:#117a37}
+    .muted{color:#555}
   </style>
 </head>
 <body>
-  <h2>Apply values to this item</h2>
-  <p>Updates <b>status06</b> (Group) and <b>date6</b> (Date). Edit <code>buildColumnValues()</code> to add more.</p>
-  <button id="apply" class="ok">Apply to Monday</button>
-  <div id="out" style="margin-top:16px;"></div>
+  <h2>Apply to this item (status06 + date6)</h2>
+  <div class="muted">This page validates your columns first, then updates.</div>
 
-  <script>
-    // Initialize SDK (correct casing: mondaySdk)
-    const monday = window.mondaySdk();
+  <div style="margin-top:12px;">
+    <label>Status label to set (status06): <input id="statusInput" placeholder="e.g. SPC / ENG / MAJ / TBD" /></label>
+  </div>
+  <div style="margin-top:8px;">
+    <label>Date to set (date6): <input id="dateInput" type="date" /></label>
+    <label style="margin-left:12px;">Time (optional): <input id="timeInput" type="time" step="1" placeholder="HH:MM or HH:MM:SS" /></label>
+  </div>
+  <div style="margin-top:12px;">
+    <button id="applyBtn">Apply</button>
+  </div>
 
-    function normalizeGroupLabel(raw) {
-      if (!raw) return null;
-      const s = String(raw).trim().toUpperCase();
-      if (["SPC","SPEC","SPECIAL"].includes(s)) return "SPC";
-      if (["ENG","ENGINEERING"].includes(s)) return "ENG";
-      if (["MAJ","MAJOR"].includes(s)) return "MAJ";
-      if (["MKT","MARKETING"].includes(s)) return "MKT";
-      if (["TBD","UNKNOWN","NA","N/A"].includes(s)) return "TBD";
-      return null; // skip invalid labels to avoid validation errors
-    }
+  <div id="log" style="margin-top:16px;"></div>
 
-    function buildColumnValues({ groupText, dueDateISO, dueTime24 }) {
-      const colVals = {};
+<script>
+const monday = window.mondaySdk();
+let ctx = null;
 
-      // Your Group status column
-      const label = normalizeGroupLabel(groupText);
-      if (label) colVals["status06"] = { label };
+const log = (html, cls="") => {
+  const el = document.getElementById("log");
+  const p = document.createElement("div");
+  p.className = cls;
+  p.innerHTML = html;
+  el.appendChild(p);
+};
 
-      // Your Date column (time optional)
-      if (dueDateISO) {
-        if (dueTime24) {
-          colVals["date6"] = { date: dueDateISO, time: dueTime24 }; // "YYYY-MM-DD", "HH:mm" or "HH:mm:ss"
-        } else {
-          colVals["date6"] = { date: dueDateISO };
+const asJSON = (obj) => JSON.stringify(obj, null, 2);
+
+monday.listen("context", ({data}) => {
+  ctx = data;
+  log(`<b>[Context]</b> ${asJSON({boardId: ctx.boardId, itemId: ctx.itemId})}`);
+});
+
+async function getBoardColumns(boardId) {
+  const q = `
+    query GetColumns($bid: [ID!]) {
+      boards (ids: $bid) {
+        id
+        columns {
+          id
+          title
+          type
+          settings_str
         }
       }
-
-      return colVals;
     }
+  `;
+  const r = await monday.api(q, { variables: { bid: String(boardId) }});
+  if (r.errors || r.error) throw new Error((r.errors?.[0]?.message) || r.error?.message || "Failed to fetch columns");
+  return r.data.boards?.[0]?.columns || [];
+}
 
-    let ctx = null;
-    monday.listen("context", (res) => {
-      ctx = res.data;
-      console.log("[Context]", ctx);
-    });
-
-    document.getElementById("apply").addEventListener("click", async () => {
-      const out = document.getElementById("out");
-      out.innerHTML = "";
-
-      try {
-        const boardIdRaw = ctx?.boardId;
-        const itemIdRaw  = ctx?.itemId;
-        if (!boardIdRaw || !itemIdRaw) {
-          throw new Error("No boardId/itemId in context. Open this inside a Monday item view.");
-        }
-
-        // Cast IDs to strings for GraphQL ID type
-        const boardId = String(boardIdRaw);
-        const itemId  = String(itemIdRaw);
-
-        // TODO: replace with your parsed values
-        const groupText = "SPC";
-        const dueDateISO = "2025-09-15";
-        const dueTime24  = "13:00"; // optional
-
-        const colValsObj = buildColumnValues({ groupText, dueDateISO, dueTime24 });
-        const columnValsString = JSON.stringify(colValsObj);
-
-        // NOTE: board_id expects ID!, item_id expects ID (nullable) on your schema
-        const mutation = `
-          mutation ChangeVals($boardId: ID!, $itemId: ID, $columnVals: JSON!) {
-            change_multiple_column_values(
-              board_id: $boardId,
-              item_id: $itemId,
-              column_values: $columnVals
-            ) { id }
-          }
-        `;
-
-        const variables = {
-          boardId,
-          itemId,
-          columnVals: columnValsString
-        };
-
-        const resp = await monday.api(mutation, { variables });
-        console.log("[GQL Response]", resp);
-
-        if (resp.error || resp.errors) {
-          const msg = (resp.error?.message) || (resp.errors && resp.errors[0] && resp.errors[0].message) || "Unknown GraphQL error";
-          throw new Error(msg);
-        }
-
-        out.innerHTML = `<div>✅ Updated item <b>${itemId}</b> on board <b>${boardId}</b>.</div>
-        <details><summary>Sent column_values</summary><pre>${columnValsString}</pre></details>`;
-      } catch (err) {
-        console.error(err);
-        out.innerHTML = `<div class="warn">❌ Update failed:<br>${err?.message || err}</div>`;
-      }
-    });
-  </script>
-</body>
-</html>
+function readStatusLabels(settings_str_
