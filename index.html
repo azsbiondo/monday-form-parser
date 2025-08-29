@@ -8,12 +8,30 @@
 <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
-:root{--bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;--accent:#3d6317;--accent-2:#24468E;--border:rgba(255,255,255,.12);--shadow:0 10px 25px rgba(0,0,0,.35)}
-@media (prefers-color-scheme: light){:root{--bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;--accent:#3d6317;--accent-2:#24468E;--border:rgba(10,12,16,.08);--shadow:0 10px 25px rgba(10,12,16,.08)}}
+:root{
+  --bg:#0b0c0f; --card:rgba(255,255,255,.06); --text:#eaeef6; --muted:#aab2c5;
+  --accent:#3d6317; --accent-2:#24468E; --border:rgba(255,255,255,.12);
+  --shadow:0 10px 25px rgba(0,0,0,.35);
+  --field-bg: rgba(255,255,255,.06); --field-text: #eaeef6; --field-border: rgba(255,255,255,.16);
+  --option-bg:#1a1d24; --option-text:#eaeef6;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f6f7fb; --card:#ffffff; --text:#0b0c0f; --muted:#5a6173;
+    --accent:#3d6317; --accent-2:#24468E; --border:rgba(10,12,16,.08);
+    --shadow:0 10px 25px rgba(10,12,16,.08);
+    --field-bg:#ffffff; --field-text:#0b0c0f; --field-border: rgba(10,12,16,.12);
+    --option-bg:#ffffff; --option-text:#0b0c0f;
+  }
+}
 html,body{height:100%}
-body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:
-  radial-gradient(1200px 600px at 20% -10%,rgba(36,70,142,.25),transparent 60%),
-  radial-gradient(900px 450px at 120% 20%,rgba(61,99,23,.20),transparent 60%),var(--bg);color:var(--text)}
+body{
+  margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+  background:radial-gradient(1200px 600px at 20% -10%, rgba(36,70,142,.25), transparent 60%),
+             radial-gradient(900px 450px at 120% 20%, rgba(61,99,23,.20), transparent 60%),
+             var(--bg);
+  color:var(--text)
+}
 .container{max-width:980px;margin:24px auto;padding:0 20px}
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .title{font-size:20px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
@@ -21,21 +39,38 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
 .panel{background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:14px 14px 0 14px}
 .actions{display:flex;gap:10px;flex-wrap:wrap}
-.btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06));color:var(--text);border:1px solid var(--border);transition:transform .05s ease,box-shadow .2s ease,border-color .2s ease}
+.btn{
+  appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06));color:var(--text);border:1px solid var(--border);
+  transition:transform .05s ease,box-shadow .2s ease,border-color .2s ease
+}
 .btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .btn.primary{background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;border-color:transparent}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
-.statusline{font-size:12px;color:var(--muted);padding:0 14px 10px 14px}
+.statusline{font-size:12px;color:var(--muted);padding:0 14px 10px 14px;min-height:20px}
 .body{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px}
 @media (max-width:940px){.body{grid-template-columns:1fr}}
 .card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:14px;padding:14px;min-height:180px}
 .card h2{font-size:14px;margin:0 0 10px 0;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
 .drop{display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;transition:border-color .2s ease,background .2s ease}
 .drop.k{border-color:var(--accent-2);background:rgba(36,70,142,.06)}
-.preview{max-height:420px;overflow:auto}
+.preview{max-height:460px;overflow:auto}
 .row{display:grid;grid-template-columns:230px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
 .key{font-weight:700}
-.input,.select,.textarea{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text)}
+.input,.select,.textarea{
+  width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--field-border);
+  background:var(--field-bg);color:var(--field-text)
+}
+.select{
+  appearance:none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--field-text) 50%),
+                    linear-gradient(135deg, var(--field-text) 50%, transparent 50%),
+                    linear-gradient(to right, transparent, transparent);
+  background-position: calc(100% - 20px) calc(1em + 2px), calc(100% - 15px) calc(1em + 2px), 100% 0;
+  background-size: 5px 5px, 5px 5px, 2.5em 2.5em;
+  background-repeat: no-repeat;
+}
+.select option{background-color:var(--option-bg); color:var(--option-text)}
 .textarea{min-height:80px;resize:vertical}
 .inline{display:flex;gap:10px;align-items:center}
 .toggle{display:inline-flex;align-items:center;gap:8px}
@@ -44,8 +79,8 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
 .kpi{display:flex;gap:10px;flex-wrap:wrap}
 .kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
 .footer-note{font-size:11px;color:var(--muted);padding:10px 14px 16px 14px}
-hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
 .hide{display:none!important}
+.warn{color:#ffcc66}
 </style>
 </head>
 <body>
@@ -73,7 +108,7 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
         <h2>Dropzone</h2>
         <div id="dropzone" class="drop">Drag & drop a .docx here</div>
         <input id="fileinput" type="file" accept=".docx" style="display:none">
-        <div class="footer-note">All processing stays in your browser; only column updates and the Scope comment are sent to Monday.</div>
+        <div class="footer-note">Processing is local; we only send column updates (and the Scope comment) to Monday.</div>
       </div>
       <div class="card">
         <h2>Preview & Modify</h2>
@@ -87,15 +122,15 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
-  // === Column mapping (add PM Lead -> text0) ===
+  // === Column mapping (incl. PM Lead -> text0) ===
   const mapping={
     "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
     "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
     "Team_Est":{"type":"text","columnId":"text8"},
-    "PM_Lead_UI":{"type":"text","columnId":"text0"} // UI-only field mapped to text0
+    "PM_Lead_UI":{"type":"text","columnId":"text0"}
   };
 
-  // === Rules & UI spec ===
+  // === Rules / UI spec ===
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
   const GROUP_OPTIONS = ["SPC","ENG","MAJ","MKT","TBD"];
   const ORDER = [
@@ -113,18 +148,24 @@ document.addEventListener("DOMContentLoaded", () => {
   ];
 
   let ctx=null,itemId=null,boardId=null;
-  let extracted={}, edited={}, includeTime=false;
+  let edited={}, includeTime=false;
+  let boardSchema=null; // fetched columns + status labels
 
   // === Helpers ===
   const $ = sel => document.querySelector(sel);
   function setMsg(t){$("#msg").innerText=t||""}
-  function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
+  function showErr(e,label){
+    let msg = (e && e.message) ? e.message : String(e||"Unknown error");
+    // If server gave extra detail, show it
+    if(e && e.raw) msg += " | " + e.raw;
+    setMsg(label+": "+msg);
+    console.error(label, e);
+  }
   function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
   function normText(s){return (s||"").trim()}
   function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
   function parseTimeToHHMM(s){
-    if(!s)return null;
-    const str=String(s).trim();
+    if(!s)return null; const str=String(s).trim();
     const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
     if(!m){const d=new Date("1970-01-01T"+str);if(!isNaN(d))return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");return null}
     let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();
@@ -133,7 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")
   }
 
-  // === DOCX unzip & DOMParser ===
+  // Unzip + DOMParser for .docx
   async function parseDocxArrayBuffer(ab){
     const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
     const f=zip.file("word/document.xml");
@@ -141,10 +182,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return await withTimeout(f.async("string"),8000,"Reading document.xml");
   }
   function collectText(node){
-    let val="";
-    const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT,null);
-    let n; while((n=walker.nextNode())) val+=n.nodeValue;
-    return val;
+    let val=""; const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT,null); let n;
+    while((n=walker.nextNode())) val+=n.nodeValue; return val;
   }
   function extractSdtWithDOM(documentXml){
     const dom = new DOMParser().parseFromString(documentXml,"application/xml");
@@ -176,12 +215,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  // === Compute fields ===
-  function buildItemNameFromEdited(){
-    const a=normText(edited.ENumber), b=normText(edited.Name_Client), c=normText(edited.Name_Project);
-    const parts=[a,b,c].filter(Boolean);
-    return parts.length? parts.join(" ") : null;
-  }
+  // Pre-translate Group
   function translateGroupToOption(v){
     if(!v) return "";
     const s=String(v).trim();
@@ -193,11 +227,9 @@ document.addEventListener("DOMContentLoaded", () => {
     return "";
   }
 
-  // === Editable preview ===
+  // UI render
   function renderEditablePreview(source){
-    const el=$("#preview");
-    el.innerHTML="";
-    el.classList.remove("kv-empty");
+    const el=$("#preview"); el.innerHTML=""; el.classList.remove("kv-empty");
     edited = {};
 
     const parsedTime = parseTimeToHHMM(source.Due_Time);
@@ -219,7 +251,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const cell=document.createElement("div");
 
       if(tag==="Group"){
-        const sel=document.createElement("select"); sel.className="select";
+        const sel=document.createElement("select"); sel.className="select"; sel.ariaLabel="Group";
         const blank=document.createElement("option"); blank.value=""; blank.textContent="— Select —"; sel.appendChild(blank);
         GROUP_OPTIONS.forEach(opt=>{const o=document.createElement("option");o.value=opt;o.textContent=opt;if(opt===value)o.selected=true; sel.appendChild(o)});
         sel.addEventListener("change",e=>{ edited[tag]=e.target.value; });
@@ -239,7 +271,7 @@ document.addEventListener("DOMContentLoaded", () => {
         inp.addEventListener("input",e=>{ edited[tag]=e.target.value; });
         wrap.appendChild(toggle); wrap.appendChild(inp); cell.appendChild(wrap);
       }else if(tag==="Scope"){
-        const ta=document.createElement("textarea"); ta.className="textarea"; ta.value=value; ta.placeholder="Enter scope details (will be posted as a comment)";
+        const ta=document.createElement("textarea"); ta.className="textarea"; ta.value=value; ta.placeholder="Enter scope details (will post as a comment)";
         ta.addEventListener("input",e=>{ edited[tag]=e.target.value; }); cell.appendChild(ta);
       }else if(control==="number"){
         const inp=document.createElement("input"); inp.type="number"; inp.className="input"; inp.value=value;
@@ -255,7 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#apply").disabled = false;
   }
 
-  // === Build column_values JSON ===
+  // Build payload
   function buildColumnUpdates(){
     const vals={};
     const d = edited.Due_Date || "";
@@ -274,15 +306,93 @@ document.addEventListener("DOMContentLoaded", () => {
     return vals;
   }
 
-  // === Mutations (use JSON! variable) ===
+  function buildItemNameFromEdited(){
+    const a=normText(edited.ENumber), b=normText(edited.Name_Client), c=normText(edited.Name_Project);
+    const parts=[a,b,c].filter(Boolean);
+    return parts.length? parts.join(" ") : null;
+  }
+
+  // === Schema fetch & validation ===
+  async function fetchBoardSchema(){
+    const q=`query($bid:[Int!]){
+      boards(ids:$bid){
+        id
+        columns{id title type settings_str}
+      }
+    }`;
+    const res = await monday.api(q,{variables:{bid:[Number(boardId)]}});
+    if(res.errors && res.errors.length){ throw new Error(res.errors.map(e=>e.message).join("; ")) }
+    const cols = (res.data?.boards?.[0]?.columns)||[];
+    const byId = {}; cols.forEach(c=>byId[c.id]=c);
+    // status labels for status06
+    let statusLabels=[];
+    const st = byId["status06"];
+    if(st && st.settings_str){
+      try{
+        const s=JSON.parse(st.settings_str);
+        statusLabels = (s.labels || Object.values(s.labels_groups?.[0]?.labels||{})).filter(Boolean);
+      }catch(_){}
+    }
+    return {byId, statusLabels};
+  }
+
+  function validatePayload(vals, schema){
+    const warnings=[];
+    const cleaned = {...vals};
+
+    // Ensure columns exist & types are compatible
+    for(const colId of Object.keys(cleaned)){
+      const col = schema.byId[colId];
+      if(!col){
+        warnings.push(`Column '${colId}' not found on this board; skipping.`);
+        delete cleaned[colId];
+        continue;
+      }
+      if(colId==="status06"){
+        const label = cleaned[colId]?.label;
+        if(label && !schema.statusLabels.includes(label)){
+          warnings.push(`Status label '${label}' does not exist in status06; skipping.`);
+          delete cleaned[colId];
+        }
+      }
+      if(colId==="date6"){
+        const v=cleaned[colId];
+        if(!v || !v.date){ warnings.push(`Date for 'date6' missing/invalid; skipping.`); delete cleaned[colId]; }
+      }
+    }
+
+    return {cleaned, warnings};
+  }
+
+  // === Mutations with robust error surfacing + fallback ===
   async function applyToMonday(vals, nameCandidate, scopeText){
-    if(Object.keys(vals).length>0){
-      const m=`mutation($bid:Int!,$iid:Int!,$vals: JSON!){
+    // Preflight schema if not cached
+    if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
+    const {cleaned, warnings} = validatePayload(vals, boardSchema);
+    if(warnings.length){ setMsg(`Note: ${warnings.join(" ")}`); }
+
+    // 1) change_multiple_column_values
+    if(Object.keys(cleaned).length>0){
+      // Try JSON! variable first
+      const mVar=`mutation($bid:Int!,$iid:Int!,$vals: JSON!){
         change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$vals){ id }
       }`;
-      const resp = await monday.api(m,{variables:{bid:Number(boardId),iid:Number(itemId),vals}});
-      if(resp.errors && resp.errors.length){ throw new Error(resp.errors.map(e=>e.message).join("; ")) }
+      let resp = await monday.api(mVar,{variables:{bid:Number(boardId),iid:Number(itemId),vals:cleaned}});
+      if(resp.errors && resp.errors.length){
+        // retry with stringified payload (legacy behavior)
+        const s = JSON.stringify(cleaned);
+        const mStr=`mutation($bid:Int!,$iid:Int!,$s:String!){
+          change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$s){ id }
+        }`;
+        resp = await monday.api(mStr,{variables:{bid:Number(boardId),iid:Number(itemId),s}});
+        if(resp.errors && resp.errors.length){
+          const raw = JSON.stringify(resp.errors);
+          const err = new Error(resp.errors.map(e=>e.message).join("; ")); err.raw = raw; throw err;
+        }
+      }
     }
+
+    // 2) item name
     if(nameCandidate){
       try{
         const m2=`mutation($iid:Int!,$val:String!){
@@ -293,14 +403,16 @@ document.addEventListener("DOMContentLoaded", () => {
       }catch(e){
         const m3=`mutation($iid:Int!,$name:String!){ change_item_name(item_id:$iid,name:$name){ id } }`;
         const r3 = await monday.api(m3,{variables:{iid:Number(itemId),name:nameCandidate}});
-        if(r3.errors && r3.errors.length){ throw new Error(r3.errors.map(er=>er.message).join("; ")) }
+        if(r3.errors && r3.errors.length){ const err=new Error(r3.errors.map(er=>er.message).join("; ")); err.raw=JSON.stringify(r3.errors); throw err; }
       }
     }
+
+    // 3) scope comment
     if(scopeText && scopeText.trim()){
       const body=`Scope: ${scopeText.trim()}`;
       const m4=`mutation($iid:Int!,$body:String!){ create_update(item_id:$iid, body:$body){ id } }`;
       const r4 = await monday.api(m4,{variables:{iid:Number(itemId),body}});
-      if(r4.errors && r4.errors.length){ throw new Error(r4.errors.map(er=>er.message).join("; ")) }
+      if(r4.errors && r4.errors.length){ const err=new Error(r4.errors.map(er=>er.message).join("; ")); err.raw=JSON.stringify(r4.errors); throw err; }
     }
   }
 
@@ -339,19 +451,17 @@ document.addEventListener("DOMContentLoaded", () => {
       setMsg("Updating item…");
       await applyToMonday(vals, nameCandidate, scopeText);
       setMsg("Done");
-    }catch(e){
-      showErr(e,"Update failed");
-    }
+    }catch(e){ showErr(e,"Update failed") }
   };
 
-  // === Local file flow ===
+  // Local file flow
   async function handleLocalFile(file){
     try{
       setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
       const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");
       const xml=await parseDocxArrayBuffer(ab);
       setMsg("Parsing fields…");
-      extracted = extractSdtWithDOM(xml);
+      const extracted = extractSdtWithDOM(xml);
       const filtered = {};
       Object.keys(extracted).forEach(k=>{ if(!IGNORED.has(k)) filtered[k]=extracted[k] });
       renderEditablePreview(filtered);
@@ -359,7 +469,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }catch(e){ showErr(e,"Could not read .docx") }
   }
 
-  // surface unexpected global errors
   window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
 });
 </script>
