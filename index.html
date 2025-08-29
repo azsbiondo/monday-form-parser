@@ -1,225 +1,364 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Form Parser</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+:root{--bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;--accent:#3d6317;--accent-2:#24468E;--border:rgba(255,255,255,.12);--shadow:0 10px 25px rgba(0,0,0,.35)}
+@media (prefers-color-scheme: light){:root{--bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;--accent:#3d6317;--accent-2:#24468E;--border:rgba(10,12,16,.08);--shadow:0 10px 25px rgba(10,12,16,.08)}}
+html,body{height:100%}
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:
+  radial-gradient(1200px 600px at 20% -10%,rgba(36,70,142,.25),transparent 60%),
+  radial-gradient(900px 450px at 120% 20%,rgba(61,99,23,.20),transparent 60%),var(--bg);color:var(--text)}
+.container{max-width:980px;margin:24px auto;padding:0 20px}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.title{font-size:20px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
+.badge{font-size:12px;padding:4px 8px;border-radius:999px;background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:14px 14px 0 14px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06));color:var(--text);border:1px solid var(--border);transition:transform .05s ease,box-shadow .2s ease,border-color .2s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.btn.primary{background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;border-color:transparent}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.statusline{font-size:12px;color:var(--muted);padding:0 14px 10px 14px}
+.body{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px}
+@media (max-width:940px){.body{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:14px;padding:14px;min-height:180px}
+.card h2{font-size:14px;margin:0 0 10px 0;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
+.drop{display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;transition:border-color .2s ease,background .2s ease}
+.drop.k{border-color:var(--accent-2);background:rgba(36,70,142,.06)}
+.preview{max-height:310px;overflow:auto}
+.row{display:grid;grid-template-columns:200px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
+.key{font-weight:700}
+.input{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text)}
+.kv-empty{color:var(--muted)}
+.kpi{display:flex;gap:10px;flex-wrap:wrap}
+.kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
+.footer-note{font-size:11px;color:var(--muted);padding:10px 14px 16px 14px}
+hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="title">Form → Columns <span class="badge">Item View</span></div>
+    <div class="kpi">
+      <div class="kpill" id="theme-pill">Theme: auto</div>
+      <div class="kpill" id="ctx-pill">Board: — | Item: —</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="toolbar">
+      <div class="actions">
+        <!-- Extract-from-attachment hidden as requested -->
+        <button class="btn hide" id="extract">Extract from attachment</button>
+        <button class="btn primary" id="apply" disabled>Apply to item</button>
+      </div>
+      <div class="actions">
+        <button class="btn" id="choose">Choose .docx</button>
+      </div>
+    </div>
+    <div class="statusline" id="msg">Drop a .docx below or click “Choose .docx”.</div>
+    <div class="body">
+      <div class="card">
+        <h2>Dropzone</h2>
+        <div id="dropzone" class="drop">Drag & drop a .docx here</div>
+        <input id="fileinput" type="file" accept=".docx" style="display:none">
+        <div class="hint">Only the mapped fields will be applied to Monday. You can edit values on the right before applying.</div>
+        <hr class="sep">
+        <div class="footer-note">All processing stays in your browser; only column updates are sent to Monday.</div>
+      </div>
+      <div class="card">
+        <h2>Preview & Modify</h2>
+        <div id="preview" class="preview kv-empty">No fields extracted yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
 document.addEventListener("DOMContentLoaded", () => {
-const monday = mondaySdk();
+  const monday = mondaySdk();
 
-  // === Column mapping (includes PM Lead -> text0) ===
-  // === Fixed mappings ===
-const mapping={
-"Value":{"type":"numbers","columnId":"numeric_mkq0534"},
-"Team_Lead":{"type":"text","columnId":"executive___ops_2"},
-@@ -144,9 +144,9 @@ <h2>Preview & Modify</h2>
-["Scope","scope","textarea"]
-];
+  // ====== Column mapping (send ONLY these) ======
+  const mapping={
+    "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
+    "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
+    "Team_Est":{"type":"text","columnId":"text8"}
+  };
 
-  let ctx=null,itemId=null,boardId=null;
-  let itemId=null,boardId=null;
-let edited={}, includeTime=false;
-  let boardSchema=null;
-  let boardSchema=null; // { byId, groupColId, dateColId, statusLabels }
+  // ====== Special rules ======
+  const IGNORED = new Set(["Name_Requester","Date_Request"]); // don’t show / don’t use
+  const SPECIAL_USED = new Set(["ENumber","Name_Client","Name_Project","Due_Date","Due_Time","Group"]); // used for title/date/status rules
 
-// === Helpers ===
-const $ = sel => document.querySelector(sel);
-@@ -232,7 +232,7 @@ <h2>Preview & Modify</h2>
-return out;
-}
+  let ctx=null,itemId=null,boardId=null,rawFields={},editedFields={},updates=null,assetUrl=null,pendingName=null;
 
-  // === Pre-translate Group ===
-  // === Group translation rules ===
-function translateGroupToOption(v){
-if(!v) return "";
-const s=String(v).trim();
-@@ -244,7 +244,7 @@ <h2>Preview & Modify</h2>
-return "";
-}
+  // ====== UI helpers ======
+  function setMsg(t){document.getElementById("msg").innerText=t||""}
+  function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
+  function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
+  function normText(s){return (s||"").trim()}
+  function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
 
-  // === Editable preview ===
-  // === Editable preview UI ===
-function renderEditablePreview(source){
-const el=$("#preview"); el.innerHTML=""; el.classList.remove("kv-empty");
-edited = {};
-@@ -304,16 +304,29 @@ <h2>Preview & Modify</h2>
-$("#apply").disabled = false;
-}
+  // Clamp to 24h HH:MM, minutes => 00 or 30 only
+  function parseTimeToHHMM(s){
+    if(!s) return null;
+    const str=String(s).trim();
 
-  // === Build payload ===
-  // === Build payload (uses dynamic column IDs) ===
-function buildColumnUpdates(){
-    if(!boardSchema) return {};
-const vals={};
+    // Try flexible parser first (HH[:MM][am/pm])
+    const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
+    if(m){
+      let hh=parseInt(m[1],10);
+      let mm=m[2]?parseInt(m[2],10):0;
+      const ap=m[3]?.toLowerCase?.();
 
-    // date
-const d = edited.Due_Date || "";
-const t = includeTime ? (edited.Due_Time || "") : "";
-    if(d){ vals["date6"] = t ? {"date": d, "time": t} : {"date": d}; }
-    if(edited.Group){ vals["status06"] = {"label": edited.Group}; }
-    if(d && boardSchema.dateColId){
-      vals[boardSchema.dateColId] = t ? {"date": d, "time": t} : {"date": d};
+      if(ap==="pm"&&hh<12) hh+=12;
+      if(ap==="am"&&hh===12) hh=0;
+
+      if(hh<0||hh>23) return null;
+      // clamp minutes to 00 / 30
+      mm = mm>=30 ? 30 : 0;
+
+      return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
     }
 
-    // group/status
-    if(edited.Group && boardSchema.groupColId){
-      vals[boardSchema.groupColId] = {"label": edited.Group};
-    }
+    // Fallback: Date parser
+    const d=new Date("1970-01-01T"+str);
+    if(isNaN(d)) return null;
+    let hh=d.getHours(), mm=d.getMinutes();
+    mm = mm>=30 ? 30 : 0;
+    return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
+  }
 
-    // simple mapped text/numbers
-for(const k in mapping){
-const m=mapping[k], v=edited[k];
-if(v==null || v==="") continue;
-      // make sure the column exists on this board
-      if(!boardSchema.byId[m.columnId]) continue;
-if(m.type==="text"){ vals[m.columnId]=v; }
-else if(m.type==="numbers"){
-const n=Number(String(v).replace(/[^0-9.\-]/g,""));
-@@ -331,7 +344,7 @@ <h2>Preview & Modify</h2>
-return name;
-}
+  // ====== DOCX unzip & XML parse with DOMParser ======
+  async function parseDocxArrayBuffer(ab){
+    const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
+    const f=zip.file("word/document.xml");
+    if(!f) throw new Error("word/document.xml not found (is this a valid .docx?)");
+    return await withTimeout(f.async("string"),8000,"Reading document.xml");
+  }
 
-  // === Schema fetch + validation (IDs as strings) ===
-  // === Schema fetch + dynamic IDs ===
-async function fetchBoardSchema(){
-const q=`query($bid:[ID!]){
-     boards(ids:$bid){
-@@ -342,75 +355,94 @@ <h2>Preview & Modify</h2>
-const res = await runGql("schema", q, {bid:[String(boardId)]});
-const cols = (res.data?.boards?.[0]?.columns)||[];
-const byId = {}; cols.forEach(c=>byId[c.id]=c);
+  function textFromNode(node){
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+    let t="", curr; while((curr=walker.nextNode())) t += curr.nodeValue; return t;
+  }
 
-    // Find Group status column
-    const groupCol = cols.find(c => c.type==="color" || c.type==="status") || 
-                     cols.find(c => c.title?.toLowerCase?.() === "group" && (c.type==="status"||c.type==="color")) ||
-                     cols.find(c => c.title?.toLowerCase?.().includes("group") && (c.type==="status"||c.type==="color"));
-    const groupColId = groupCol?.id || "status06"; // last-resort fallback
-
-    // Find Due Date column
-    let dateCol = cols.find(c => c.title?.toLowerCase?.() === "due date" && c.type==="date");
-    if(!dateCol) dateCol = cols.find(c => c.type==="date"); // first date if exact title not found
-    const dateColId = dateCol?.id || "date6"; // fallback
-
-    // Parse status labels (be robust to different shapes)
-let statusLabels=[];
-    const st = byId["status06"];
-    const st = byId[groupColId];
-if(st && st.settings_str){
-try{
-const s=JSON.parse(st.settings_str);
-        statusLabels = (s.labels || Object.values(s.labels_groups?.[0]?.labels||{})).filter(Boolean);
-        if (s.labels && typeof s.labels === "object") {
-          statusLabels = Object.values(s.labels).filter(Boolean);
-        } else if (Array.isArray(s.labels)) {
-          statusLabels = s.labels.filter(Boolean);
-        }
-        if ((!statusLabels || statusLabels.length===0) && Array.isArray(s.labels_groups) && s.labels_groups[0]?.labels){
-          statusLabels = Object.values(s.labels_groups[0].labels).filter(Boolean);
-        }
-        if ((!statusLabels || statusLabels.length===0) && s.labels_positions){
-          statusLabels = Object.keys(s.labels_positions);
-        }
-}catch(_){}
-}
-    console.log("[Schema] columns", byId);
-    console.log("[Schema] status06 labels", statusLabels);
-    return {byId, statusLabels};
-
-    console.log("[Schema] groupColId", groupColId, "dateColId", dateColId);
-    console.log("[Schema] status labels", statusLabels);
-
-    return {byId, groupColId, dateColId, statusLabels};
-}
-
-  // Lenient validator: if we can’t read labels, don’t block updates
-function validatePayload(vals, schema){
-const warnings=[];
-const cleaned = {...vals};
-
-for(const colId of Object.keys(cleaned)){
-const col = schema.byId[colId];
-if(!col){
-warnings.push(`Column '${colId}' not found; skipping.`);
-delete cleaned[colId];
-continue;
-}
-      if(colId==="status06"){
-      if(col.type==="status" || col.type==="color"){
-const label = cleaned[colId]?.label;
-        if(label && !(schema.statusLabels||[]).includes(label)){
-          warnings.push(`Status label '${label}' not in status06; skipping.`);
-          delete cleaned[colId];
-        if(label && Array.isArray(schema.statusLabels) && schema.statusLabels.length>0){
-          if(!schema.statusLabels.includes(label)){
-            warnings.push(`Status label '${label}' not found in '${col.title}'; skipping.`);
-            delete cleaned[colId];
-          }
-}
-}
-      if(colId==="date6"){
-      if(col.type==="date"){
-const v=cleaned[colId];
-        if(!v || !v.date){ warnings.push(`Date for 'date6' missing/invalid; skipping.`); delete cleaned[colId]; }
-        if(!v || !v.date){ warnings.push(`Date for '${col.title}' missing/invalid; skipping.`); delete cleaned[colId]; }
-}
-}
-if(warnings.length){ setMsg("Note: "+warnings.join(" ")); }
-console.log("[Payload] cleaned", cleaned, "warnings:", warnings);
-return cleaned;
-}
-
-  // === Mutations (IDs as strings) ===
-  // === Mutations (IDs as strings, JSON! only) ===
-async function applyToMonday(vals, nameCandidate, scopeText){
-if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
-const cleaned = validatePayload(vals, boardSchema);
-
-    // 1) change_multiple_column_values (JSON! first, fallback to string)
-if(Object.keys(cleaned).length>0){
-const mVar=`mutation($bid:ID!,$iid:ID!,$vals: JSON!){
-       change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$vals){ id }
-     }`;
-      try{
-        await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
-      }catch(err){
-        const s = JSON.stringify(cleaned);
-        const mStr=`mutation($bid:ID!,$iid:ID!,$s:String!){
-          change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$s){ id }
-        }`;
-        await runGql("set-columns(string)", mStr, {bid:String(boardId),iid:String(itemId),s});
+  function extractSdtWithDOM(documentXml){
+    const dom = new DOMParser().parseFromString(documentXml,"application/xml");
+    if(dom.getElementsByTagName("parsererror").length){throw new Error("XML parsererror in document.xml")}
+    const all = dom.getElementsByTagName("*");
+    const out = {};
+    for(let i=0;i<all.length;i++){
+      const el=all[i]; if(el.localName!=="sdt") continue;
+      let pr=null,content=null;
+      for(let j=0;j<el.childNodes.length;j++){
+        const ch=el.childNodes[j];
+        if(ch.nodeType===1 && ch.localName==="sdtPr") pr=ch;
+        if(ch.nodeType===1 && ch.localName==="sdtContent") content=ch;
       }
-      await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
-}
+      if(!pr||!content) continue;
+      let tag=null;
+      const tags=pr.getElementsByTagName("*");
+      for(let k=0;k<tags.length;k++){
+        const t=tags[k];
+        if(t.localName==="tag"||t.localName==="alias"){
+          tag = t.getAttribute("w:val") || t.getAttribute("val");
+          if(tag) break;
+        }
+      }
+      if(!tag) continue;
+      const value = normText(textFromNode(content));
+      out[tag]=value;
+    }
+    return out;
+  }
 
-    // 2) change_item_name
-if(nameCandidate){
-const mName=`mutation($iid:ID!,$name:String!){
-       change_item_name(item_id:$iid,name:$name){ id }
-     }`;
-await runGql("set-name", mName, {iid:String(itemId),name:nameCandidate});
-}
+  // ====== Business rules ======
+  function buildTitle(fields){
+    const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
+    const parts=[a,b,c].filter(Boolean);
+    return parts.length? parts.join(" ") : null;
+  }
+  function mapGroupToStatusLabel(v){
+    if(!v) return null;
+    const s=String(v).trim();
+    const setSPC=new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management"]);
+    if(setSPC.has(s)) return "SPC";
+    if(s==="Design") return "ENG";
+    if(/^Major/i.test(s)) return "MAJ";
+    return null;
+  }
 
-    // 3) create_update for Scope
-if(scopeText && scopeText.trim()){
-const body=`Scope: ${scopeText.trim()}`;
-const mUpd=`mutation($iid:ID!,$body:String!){
-@@ -421,7 +453,11 @@ <h2>Preview & Modify</h2>
-}
+  // Build the editable preview
+  function renderEditablePreview(fields){
+    const el=document.getElementById("preview");
+    const keys = Object.keys(fields||{})
+      .filter(k => !IGNORED.has(k))   // hide requested fields
+      .sort();
 
-// === Monday context/theme ===
-  monday.listen("context",(res)=>{const c=res.data||{};ctx=c;itemId=c.itemId;boardId=c.boardId;$("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
-  monday.listen("context",(res)=>{
-    const c=res.data||{};
-    itemId=c.itemId; boardId=c.boardId;
-    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`;
+    if(!keys.length){el.classList.add("kv-empty");el.innerHTML="No fields extracted yet.";return}
+    el.classList.remove("kv-empty");
+
+    // Keep a working copy users can edit
+    editedFields = {};
+    keys.forEach(k => editedFields[k] = fields[k]);
+
+    el.innerHTML = keys.map(k => `
+      <div class="row">
+        <div class="key">${k}</div>
+        <div><input class="input" data-key="${k}" value="${(fields[k]||"").replace(/"/g,'&quot;')}"></div>
+      </div>
+    `).join("");
+
+    // Wire change handlers
+    el.querySelectorAll("input.input").forEach(inp=>{
+      inp.addEventListener("input", e=>{
+        const key = e.target.getAttribute("data-key");
+        editedFields[key] = e.target.value;
+      });
+    });
+  }
+
+  async function buildUpdatesFromEdited(fields){
+    const vals={};
+
+    // Title from edited fields
+    pendingName = buildTitle(fields) || null;
+
+    // date6: always date; time if present (24h HH:MM, minutes 00/30)
+    const dateIso = normDate(normText(fields.Due_Date));
+    const hhmm   = parseTimeToHHMM(normText(fields.Due_Time));
+    if(dateIso){ vals["date6"] = hhmm ? {"date":dateIso,"time":hhmm} : {"date":dateIso}; }
+
+    // status06 from Group mapping
+    const mappedStatus=mapGroupToStatusLabel(fields.Group);
+    if(mappedStatus){ vals["status06"]={"label":mappedStatus}; }
+
+    // Regular mapped columns
+    for(const k in mapping){
+      const m=mapping[k];
+      const v=fields[k]; // use edited value
+      if(v==null || v==="") continue;
+      if(m.type==="text"){ vals[m.columnId]=v; }
+      else if(m.type==="numbers"){
+        const n=Number(String(v).replace(/[^0-9.\-]/g,""));
+        if(!isNaN(n)) vals[m.columnId]=String(n);
+      }
+    }
+    return vals;
+  }
+
+  // Apply with robust GraphQL (IDs as ID!, column_values as JSON variable)
+  async function applyToMonday(vals){
+    // 1) Column updates via variables (prevents escaping issues)
+    const m=`mutation($b:ID!,$i:ID!,$v:JSON!){
+      change_multiple_column_values(board_id:$b,item_id:$i,column_values:$v){ id }
+    }`;
+    const resp = await monday.api(m,{ variables:{ b:String(boardId), i:String(itemId), v: JSON.stringify(vals) }});
+    if(resp.errors && resp.errors.length){
+      const msg = resp.errors.map(e=>e.message).join("; ");
+      throw new Error("column_values: " + msg);
+    }
+
+    // 2) Name update (if any). Try simple column, fall back to change_item_name.
+    if(pendingName){
+      try{
+        const m2=`mutation($i:ID!,$val:String!){
+          change_simple_column_value(item_id:$i,column_id:"name", value:$val){ id }
+        }`;
+        const r2 = await monday.api(m2,{ variables:{ i:String(itemId), val: pendingName }});
+        if(r2.errors && r2.errors.length){ throw new Error(r2.errors.map(e=>e.message).join("; ")) }
+      }catch(e){
+        const m3=`mutation($i:ID!,$name:String!){
+          change_item_name(item_id:$i, name:$name){ id }
+        }`;
+        const r3 = await monday.api(m3,{ variables:{ i:String(itemId), name: pendingName }});
+        if(r3.errors && r3.errors.length){ throw new Error("change_item_name: " + r3.errors.map(er=>er.message).join("; ")) }
+      }
+    }
+  }
+
+  // ====== Monday context/theme ======
+  monday.listen("context",(res)=>{ctx=res.data||{};itemId=ctx.itemId;boardId=ctx.boardId;document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
+  monday.listen("theme",(res)=>{const theme=res.data?.theme||"auto";document.getElementById("theme-pill").innerText=`Theme: ${theme}`});
+
+  // ====== UI bindings ======
+  const dz=document.getElementById("dropzone"), fi=document.getElementById("fileinput");
+  document.getElementById("choose").onclick=()=>fi.click();
+  fi.addEventListener("change",e=>{
+    const f=e.target.files?.[0];
+    if(f && /\.docx$/i.test(f.name)) handleLocalFile(f); else setMsg("Please choose a .docx");
   });
-monday.listen("theme",(res)=>{$("#theme-pill").innerText=`Theme: ${res.data?.theme||"auto"}`});
+  dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("k")});
+  dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("k")});
+  dz.addEventListener("drop",e=>{
+    e.preventDefault();dz.classList.remove("k");
+    const f=e.dataTransfer.files?.[0];
+    if(!f){setMsg("No file dropped");return}
+    if(!/\.docx$/i.test(f.name)){setMsg("Please drop a .docx file");return}
+    handleLocalFile(f);
+  });
 
-// === UI wiring ===
-@@ -445,10 +481,11 @@ <h2>Preview & Modify</h2>
-try{
-if(!edited || Object.keys(edited).length===0){ setMsg("Nothing to apply"); return }
-setMsg("Building updates…");
-      // Ensure schema is loaded so dynamic IDs exist before building payload
-      if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
-const vals = buildColumnUpdates();
-const nameCandidate = buildItemNameFromEdited();
-const scopeText = edited.Scope || "";
+  // (extract button intentionally hidden)
 
-if(Object.keys(vals).length===0 && !nameCandidate && !scopeText){
-setMsg("Nothing mappable found"); return;
-}
+  document.getElementById("apply").onclick=async()=>{
+    try{
+      if(!editedFields || Object.keys(editedFields).length===0){ setMsg("Nothing to apply"); return }
+      setMsg("Building updates…");
+      // Merge: start from edited view but still suppress ignored keys
+      const working = {};
+      Object.keys(editedFields).forEach(k=>{
+        if(!IGNORED.has(k)) working[k] = editedFields[k];
+      });
+
+      updates = await buildUpdatesFromEdited(working);
+
+      if(Object.keys(updates).length===0 && !buildTitle(working)){
+        setMsg("Nothing mappable found"); return;
+      }
+
+      setMsg("Updating item…");
+      await applyToMonday(updates);
+      setMsg("Done");
+    }catch(e){
+      showErr(e, "Update failed");
+    }
+  };
+
+  // ====== Flows ======
+  async function handleLocalFile(file){
+    try{
+      setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
+      const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");
+      const xml=await parseDocxArrayBuffer(ab);
+      setMsg("Parsing fields…");
+      rawFields = extractSdtWithDOM(xml);
+
+      // Build filtered view for editing
+      const filtered = {};
+      Object.keys(rawFields).forEach(k=>{
+        if(!IGNORED.has(k)) filtered[k] = rawFields[k];
+      });
+
+      renderEditablePreview(filtered);
+
+      // Enable Apply if we have anything or a computed title/date/status is possible
+      const hasAny = Object.keys(filtered).length>0;
+      document.getElementById("apply").disabled = !hasAny;
+      setMsg(hasAny? "Ready to apply" : "Nothing mappable found");
+    }catch(e){ showErr(e,"Could not read .docx") }
+  }
+
+  // Surface unexpected global errors
+  window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
+});
+</script>
+</body>
+</html>
