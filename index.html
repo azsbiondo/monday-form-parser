@@ -2,123 +2,119 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>monday updater (fixed mondaySdk init)</title>
+  <title>monday updater (CORS-safe)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
+    :root { color-scheme: light dark; }
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; }
     button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ddd; cursor: pointer; }
+    .log { margin-top: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
   </style>
-  <!-- Load the UMD build; it exposes window.mondaySdk -->
+  <!-- UMD build exposes window.mondaySdk (lowercase k) -->
   <script src="https://unpkg.com/monday-sdk-js/dist/main.js" defer></script>
 </head>
 <body>
   <h1>Update item columns</h1>
-  <p>JSON path first; falls back to String if needed.</p>
+  <p>This uses <code>monday.api</code> to avoid CORS blocks. JSON path first; falls back to String.</p>
   <button id="applyBtn">Apply to monday</button>
+  <div id="log" class="log"></div>
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      // ✅ Correct: window.mondaySdk() (NOT window.mondaySDK)
+      const logEl = document.getElementById("log");
+      const log = (...args) => {
+        console.log(...args);
+        try { logEl.textContent += args.map(a => typeof a === 'string' ? a : JSON.stringify(a, null, 2)).join(' ') + "\n"; } catch {}
+      };
+
+      // ✅ Correct global: window.mondaySdk()
       const monday = window.mondaySdk();
 
-      // ------- config you can tweak -------
-      const HARDCODED_TOKEN = ""; // leave empty to use session token
-
+      // === EDIT THESE IDS/VALUES TO MATCH YOUR BOARD ===
       function buildColumnValues() {
         const isoToday = new Date().toISOString().slice(0, 10);
         return {
-          status52: { index: 2 },    // change to your column ids/values
-          date6: { date: isoToday },
+          status52: { index: 2 },     // <-- your Status column id + value
+          date6:    { date: isoToday } // <-- your Date column id + value
         };
       }
-      // ------------------------------------
+      // ================================================
 
-      async function getAuthToken() {
-        if (HARDCODED_TOKEN) return HARDCODED_TOKEN;
-        const { data: token } = await monday.get("sessionToken");
-        return token;
-      }
-
-      async function getContext() {
+      async function getContextIds() {
         const { data } = await monday.get("context");
-        return {
-          boardId: data?.boardId || data?.boardIds?.[0],
-          itemId: data?.itemId,
-        };
+        // Works in item view and board view; prefer explicit ids when present.
+        const boardId = data?.boardId || data?.boardIds?.[0];
+        const itemId  = data?.itemId;
+        return { boardId, itemId };
       }
 
-      async function runGql(tag, query, variables) {
-        const token = await getAuthToken();
-        const res = await fetch("https://api.monday.com/v2", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": token,
-          },
-          body: JSON.stringify({ query, variables }),
-        });
-        const json = await res.json();
-        if (json.errors?.length) {
-          console.log("There was an error in response from monday.com graphql API: ", json.errors);
+      async function gqlViaSdk(tag, query, variables) {
+        // Using monday.api avoids CORS; it runs GraphQL in the parent context.
+        const res = await monday.api(query, { variables });
+        // SDK returns { data, errors? }
+        if (res.errors && res.errors.length) {
+          log(`[GQL:${tag}] errors`, res.errors);
           const e = new Error("Graphql validation errors");
-          e.graphQLErrors = json.errors;
+          e.graphQLErrors = res.errors;
           throw e;
         }
-        console.log(`[GQL:${tag}]`, json);
-        return json.data;
+        log(`[GQL:${tag}] ok`, res.data);
+        return res.data;
       }
 
       async function applyToMonday() {
         try {
-          const { boardId, itemId } = await getContext();
+          const { boardId, itemId } = await getContextIds();
           if (!boardId || !itemId) {
-            alert("Open this inside an item so I can read boardId/itemId.");
+            alert("Open this inside an item view so I can read boardId/itemId.");
             return;
           }
 
           const cleaned = buildColumnValues();
-          console.log("[Payload] cleaned object:", cleaned);
+          log("[Payload] cleaned object:", cleaned);
 
-          // --- JSON first
-          const mJson = `
+          // --- Attempt 1: pass real JSON through JSON! variable
+          const MUT_JSON = `
             mutation($bid: ID!, $iid: ID!, $vals: JSON!) {
               change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $vals) { id }
             }`;
+
           try {
-            await runGql("set-columns(JSON)", mJson, {
+            await gqlViaSdk("set-columns(JSON)", MUT_JSON, {
               bid: String(boardId),
               iid: String(itemId),
-              vals: cleaned, // object, not string
+              vals: cleaned,        // object, not string
             });
             alert("Update succeeded via JSON!");
             return;
           } catch (err) {
             const msg = (err && err.message) || "";
             const more = (err?.graphQLErrors || []).map(e => e?.message).join(" | ");
-            console.log("JSON path failed:", msg, more);
-
+            log("JSON path failed:", msg, more);
+            // If it's not a type-related thing, rethrow to stop here.
             const typeIssue =
               /expecting type "JSON!"/i.test(msg + " " + more) ||
-              /Variable .* of type "String!" used in position expecting type "JSON!"/i.test(msg + " " + more) ||
+              /String!/i.test(msg + " " + more) ||
               /INTERNAL_SERVER_ERROR/i.test(more);
-
             if (!typeIssue) throw err;
           }
 
-          // --- Fallback: String
-          const mStr = `
+          // --- Fallback 2: send as String!
+          const MUT_STRING = `
             mutation($bid: ID!, $iid: ID!, $s: String!) {
               change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $s) { id }
             }`;
-          await runGql("set-columns(String)", mStr, {
+
+          await gqlViaSdk("set-columns(String)", MUT_STRING, {
             bid: String(boardId),
             iid: String(itemId),
             s: JSON.stringify(cleaned),
           });
+
           alert("Update succeeded via String fallback!");
         } catch (e) {
-          console.error("Update failed:", e);
-          alert("Update failed. Check console.");
+          log("Update failed:", e?.message || e, e?.graphQLErrors || "");
+          alert("Update failed. Check console/log for details.");
         }
       }
 
