@@ -356,45 +356,47 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ====== Apply to Monday (use String! + JSON.stringify for stability) ======
-  async function applyToMonday(vals){
-    const mutation = `
-      mutation($board_id: ID!, $item_id: ID!, $column_values: String!) {
-        change_multiple_column_values(
-          board_id: $board_id,
-          item_id: $item_id,
-          column_values: $column_values
-        ) { id }
-      }
-    `;
-    const resp = await monday.api(mutation, {
-      variables: {
-        board_id: String(boardId),
-        item_id:  String(itemId),
-        column_values: JSON.stringify(vals) // <- pass as string
-      }
-    });
-    if(resp.errors && resp.errors.length){
-      const msg = resp.errors.map(e=>e.message).join("; ");
-      throw new Error("column_values: " + msg);
+// ====== Apply to Monday (use JSON! and pass an object, not a string) ======
+async function applyToMonday(vals){
+  const mutation = `
+    mutation($board_id: ID!, $item_id: ID!, $column_values: JSON!) {
+      change_multiple_column_values(
+        board_id: $board_id,
+        item_id: $item_id,
+        column_values: $column_values
+      ) { id }
     }
+  `;
+  const resp = await monday.api(mutation, {
+    variables: {
+      board_id: String(boardId),
+      item_id:  String(itemId),
+      column_values: vals           // <-- pass the plain object
+    }
+  });
+  if (resp.errors && resp.errors.length){
+    const msg = resp.errors.map(e => e.message).join("; ");
+    throw new Error("column_values: " + msg);
+  }
 
-    // item name
-    if(pendingName){
-      try{
-        const m2 = `mutation($item_id: ID!, $name: String!){
-          change_item_name(item_id: $item_id, name: $name){ id }
-        }`;
-        const r2 = await monday.api(m2, { variables:{ item_id:String(itemId), name:pendingName } });
-        if(r2.errors && r2.errors.length){ throw new Error(r2.errors.map(e=>e.message).join("; ")) }
-      }catch(e){
-        const m3=`mutation($iid: ID!, $val: String!){
-          change_simple_column_value(item_id:$iid, column_id:"name", value:$val){ id }
-        }`;
-        const r3 = await monday.api(m3,{ variables:{ iid:String(itemId), val: JSON.stringify(pendingName) } });
-        if(r3.errors && r3.errors.length){ throw new Error("change_simple_column_value: " + r3.errors.map(er=>er.message).join("; ")) }
-      }
+  // item name (unchanged)
+  if (pendingName){
+    try{
+      const m2 = `mutation($item_id: ID!, $name: String!){
+        change_item_name(item_id: $item_id, name: $name){ id }
+      }`;
+      const r2 = await monday.api(m2, { variables:{ item_id:String(itemId), name:pendingName } });
+      if (r2.errors && r2.errors.length){ throw new Error(r2.errors.map(e=>e.message).join("; ")) }
+    }catch(e){
+      const m3=`mutation($iid: ID!, $val: String!){
+        change_simple_column_value(item_id:$iid, column_id:"name", value:$val){ id }
+      }`;
+      const r3 = await monday.api(m3,{ variables:{ iid:String(itemId), val: JSON.stringify(pendingName) } });
+      if (r3.errors && r3.errors.length){ throw new Error("change_simple_column_value: " + r3.errors.map(er=>er.message).join("; ")) }
     }
   }
+}
+
 
   // ====== Monday context/theme ======
   monday.listen("context",(res)=>{
