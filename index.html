@@ -1,518 +1,203 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Form Parser</title>
-<link rel="preconnect" href="https://cdn.jsdelivr.net">
-<script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<style>
-:root{
-  --bg:#0b0c0f; --card:rgba(255,255,255,.06); --text:#eaeef6; --muted:#aab2c5;
-  --accent:#3d6317; --accent-2:#24468E; --border:rgba(255,255,255,.12);
-  --shadow:0 10px 25px rgba(0,0,0,.35);
-  --field-bg: rgba(255,255,255,.06); --field-text: #eaeef6; --field-border: rgba(255,255,255,.16);
-  --option-bg:#1a1d24; --option-text:#eaeef6;
-}
-@media (prefers-color-scheme: light){
-  :root{
-    --bg:#f6f7fb; --card:#ffffff; --text:#0b0c0f; --muted:#5a6173;
-    --accent:#3d6317; --accent-2:#24468E; --border:rgba(10,12,16,.08);
-    --shadow:0 10px 25px rgba(10,12,16,.08);
-    --field-bg:#ffffff; --field-text:#0b0c0f; --field-border: rgba(10,12,16,.12);
-    --option-bg:#ffffff; --option-text:#0b0c0f;
-  }
-}
-html,body{height:100%}
-body{
-  margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-  background:radial-gradient(1200px 600px at 20% -10%, rgba(36,70,142,.25), transparent 60%),
-             radial-gradient(900px 450px at 120% 20%, rgba(61,99,23,.20), transparent 60%),
-             var(--bg);
-  color:var(--text)
-}
-.container{max-width:980px;margin:24px auto;padding:0 20px}
-.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.title{font-size:20px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
-.badge{font-size:12px;padding:4px 8px;border-radius:999px;background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff}
-.panel{background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
-.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:14px 14px 0 14px}
-.actions{display:flex;gap:10px;flex-wrap:wrap}
-.btn{
-  appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;
-  background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06));color:var(--text);border:1px solid var(--border);
-  transition:transform .05s ease,box-shadow .2s ease,border-color .2s ease
-}
-.btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.18)}
-.btn.primary{background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;border-color:transparent}
-.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
-.statusline{font-size:12px;color:var(--muted);padding:0 14px 10px 14px;min-height:20px}
-.body{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px}
-@media (max-width:940px){.body{grid-template-columns:1fr}}
-.card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:14px;padding:14px;min-height:180px}
-.card h2{font-size:14px;margin:0 0 10px 0;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
-.drop{display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;transition:border-color .2s ease,background .2s ease}
-.drop.k{border-color:var(--accent-2);background:rgba(36,70,142,.06)}
-.preview{max-height:460px;overflow:auto}
-.row{display:grid;grid-template-columns:230px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
-.key{font-weight:700}
-.input,.select,.textarea{
-  width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--field-border);
-  background:var(--field-bg);color:var(--field-text)
-}
-.select{
-  appearance:none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--field-text) 50%),
-                    linear-gradient(135deg, var(--field-text) 50%, transparent 50%),
-                    linear-gradient(to right, transparent, transparent);
-  background-position: calc(100% - 20px) calc(1em + 2px), calc(100% - 15px) calc(1em + 2px), 100% 0;
-  background-size: 5px 5px, 5px 5px, 2.5em 2.5em; background-repeat: no-repeat;
-}
-.select option{background-color:var(--option-bg); color:var(--option-text)}
-.textarea{min-height:80px;resize:vertical}
-.inline{display:flex;gap:10px;align-items:center}
-.toggle{display:inline-flex;align-items:center;gap:8px}
-.toggle input[type="checkbox"]{width:36px;height:20px}
-.kv-empty{color:var(--muted)}
-.kpi{display:flex;gap:10px;flex-wrap:wrap}
-.kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
-.hide{display:none!important}
-.warn{color:#ffcc66}
-</style>
+  <meta charset="utf-8" />
+  <title>monday updater (JSON first, String fallback)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; padding: 24px; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ddd; cursor: pointer; }
+    pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow: auto; }
+  </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
-    <div class="title">Form → Columns <span class="badge">Item View</span></div>
-    <div class="kpi">
-      <div class="kpill" id="theme-pill">Theme: auto</div>
-      <div class="kpill" id="ctx-pill">Board: — | Item: —</div>
-    </div>
-  </div>
-  <div class="panel">
-    <div class="toolbar">
-      <div class="actions">
-        <button class="btn hide" id="extract">Extract from attachment</button>
-        <button class="btn primary" id="apply" disabled>Apply to item</button>
-      </div>
-      <div class="actions">
-        <button class="btn" id="choose">Choose .docx</button>
-      </div>
-    </div>
-    <div class="statusline" id="msg">Drop a .docx below or click “Choose .docx”.</div>
-    <div class="body">
-      <div class="card">
-        <h2>Dropzone</h2>
-        <div id="dropzone" class="drop">Drag & drop a .docx here</div>
-        <input id="fileinput" type="file" accept=".docx" style="display:none">
-      </div>
-      <div class="card">
-        <h2>Preview & Modify</h2>
-        <div id="preview" class="preview kv-empty">No fields extracted yet.</div>
-      </div>
-    </div>
-  </div>
-</div>
+  <h1>Update item columns</h1>
+  <p>This demo updates the current item via <code>change_multiple_column_values</code>.<br/>JSON path first, then String fallback if the API yells.</p>
+  <button id="applyBtn">Apply to monday</button>
 
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-  const monday = mondaySdk();
+  <h3>Console tips</h3>
+  <ul>
+    <li>Watch for logs like <code>[GQL:set-columns(JSON)]</code> and <code>[Retry] String!</code>.</li>
+    <li>Network tab → request payload → <code>variables.vals</code> should be an <em>object</em> in JSON mode.</li>
+  </ul>
 
-  // === Fixed mappings ===
-  const mapping={
-    "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
-    "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
-    "Team_Est":{"type":"text","columnId":"text8"},
-    "PM_Lead_UI":{"type":"text","columnId":"text0"}
-  };
+  <script src="https://unpkg.com/monday-sdk-js/dist/main.js"></script>
+  <script>
+    // --- CONFIG AREA --------------------------------------------------------
+    // If you use a personal token in a sandbox, put it here (NOT recommended for prod):
+    const HARDCODED_TOKEN = ""; // e.g. "eyJhbGciOi..."  Leave empty to use session token from SDK.
 
-  // === Rules / UI spec ===
-  const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
-  const GROUP_OPTIONS = ["SPC","ENG","MAJ","MKT","TBD"];
-  const ORDER = [
-    ["ENumber","E#","text"],
-    ["Name_Client","Client","text"],
-    ["Name_Project","Project Name","text"],
-    ["Group","Group","select"],
-    ["Value","Value","number"],
-    ["Due_Date","Due Date","date"],
-    ["Due_Time","Due Time","time"],
-    ["Team_Lead","Assigned Lead","text"],
-    ["PM_Lead_UI","PM Lead","text"],
-    ["Team_Est","Estimating Lead","text"],
-    ["Scope","scope","textarea"]
-  ];
+    // Build the values you want to write. Replace with your real payload.
+    // Keys are column IDs; values are *raw objects* as monday expects (not stringified).
+    // Example sets:
+    //  - a Status column (id: "status52") to label index 2 (depends on your board labels)
+    //  - a Date column (id: "date6") to an ISO date string
+    function buildColumnValues() {
+      const isoToday = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-  let itemId=null,boardId=null;
-  let edited={}, includeTime=false;
-  let boardSchema=null; // { byId, groupColId, dateColId, statusLabels }
-
-  // === Helpers ===
-  const $ = sel => document.querySelector(sel);
-  function setMsg(t){$("#msg").innerText=t||""}
-  function showErr(e,label){
-    const msg=(e && e.message)? e.message : String(e||"Unknown error");
-    const extra=(e && e.extra)? " | "+e.extra : "";
-    setMsg(`${label}: ${msg}${extra}`);
-    console.error(label, e);
-  }
-  function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
-  function normText(s){return (s||"").trim()}
-  function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
-  function parseTimeToHHMM(s){
-    if(!s)return null; const str=String(s).trim();
-    const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
-    if(!m){const d=new Date("1970-01-01T"+str);if(!isNaN(d))return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");return null}
-    let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();
-    if(ap==="pm"&&hh<12)hh+=12; if(ap==="am"&&hh===12)hh=0;
-    if(hh<0||hh>23||mm<0||mm>59)return null;
-    return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")
-  }
-
-  // === GQL runner with deep logging ===
-  async function runGql(label, query, variables){
-    try{
-      console.log(`[GQL:${label}]`, {query, variables});
-      const res = await monday.api(query, { variables });
-      if(res?.errors?.length){
-        const msg = res.errors.map(e=>e.message).join("; ");
-        console.error(`[GQL:${label}] errors`, res.errors);
-        const err = new Error(msg || "GraphQL errors");
-        err.extra = JSON.stringify(res.errors);
-        throw err;
-      }
-      return res;
-    }catch(e){
-      console.error(`[GQL:${label}] exception`, e);
-      const err = new Error(e?.message || "GraphQL error");
-      try{ err.extra = e?.errors? JSON.stringify(e.errors) : (e?.response? JSON.stringify(e.response) : ""); }catch(_){}
-      throw err;
+      // NOTE: adapt this to your real columns/structure.
+      return {
+        status52: { index: 2 },          // <- a status column value (label index)
+        date6: { date: isoToday },       // <- a date column value
+        // more columns here...
+      };
     }
-  }
+    // -----------------------------------------------------------------------
 
-  // === Unzip + DOMParser for .docx ===
-  async function parseDocxArrayBuffer(ab){
-    const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
-    const f=zip.file("word/document.xml");
-    if(!f) throw new Error("word/document.xml not found (is this a valid .docx?)");
-    return await withTimeout(f.async("string"),8000,"Reading document.xml");
-  }
-  function collectText(node){
-    let val=""; const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT,null); let n;
-    while((n=walker.nextNode())) val+=n.nodeValue; return val;
-  }
-  function extractSdtWithDOM(documentXml){
-    const dom = new DOMParser().parseFromString(documentXml,"application/xml");
-    if(dom.getElementsByTagName("parsererror").length){throw new Error("XML parsererror in document.xml")}
-    const out = {};
-    const all = dom.getElementsByTagName("*");
-    for(let i=0;i<all.length;i++){
-      const el=all[i]; if(el.localName!=="sdt") continue;
-      let pr=null,content=null;
-      for(let j=0;j<el.childNodes.length;j++){
-        const ch=el.childNodes[j];
-        if(ch.nodeType===1 && ch.localName==="sdtPr") pr=ch;
-        if(ch.nodeType===1 && ch.localName==="sdtContent") content=ch;
-      }
-      if(!pr||!content) continue;
-      let tag=null;
-      const tags=pr.getElementsByTagName("*");
-      for(let k=0;k<tags.length;k++){
-        const t=tags[k];
-        if(t.localName==="tag"||t.localName==="alias"){
-          tag = t.getAttribute("w:val") || t.getAttribute("val");
-          if(tag) break;
-        }
-      }
-      if(!tag) continue;
-      const value = normText(collectText(content));
-      out[tag]=value;
-    }
-    return out;
-  }
+    const monday = window.mondaySDK();
+    let ctx = null;
 
-  // === Group translation rules ===
-  function translateGroupToOption(v){
-    if(!v) return "";
-    const s=String(v).trim();
-    const spc=new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management"]);
-    if(spc.has(s)) return "SPC";
-    if(s==="Design") return "ENG";
-    if(/^Major/i.test(s)) return "MAJ";
-    if(GROUP_OPTIONS.includes(s)) return s;
-    return "";
-  }
-
-  // === Editable preview UI ===
-  function renderEditablePreview(source){
-    const el=$("#preview"); el.innerHTML=""; el.classList.remove("kv-empty");
-    edited = {};
-
-    const parsedTime = parseTimeToHHMM(source.Due_Time);
-    includeTime = !!parsedTime;
-
-    ORDER.forEach(([tag,label,control])=>{
-      if(tag !== "PM_Lead_UI" && IGNORED.has(tag)) return;
-
-      let value = "";
-      if(tag==="Group"){ value = translateGroupToOption(source.Group); }
-      else if(tag==="Due_Date"){ value = normDate(source.Due_Date) || ""; }
-      else if(tag==="Due_Time"){ value = parsedTime || ""; }
-      else if(tag==="PM_Lead_UI"){ value = ""; }
-      else { value = source[tag] || ""; }
-      edited[tag] = value;
-
-      const row=document.createElement("div"); row.className="row";
-      const key=document.createElement("div"); key.className="key"; key.textContent=label;
-      const cell=document.createElement("div");
-
-      if(tag==="Group"){
-        const sel=document.createElement("select"); sel.className="select"; sel.ariaLabel="Group";
-        const blank=document.createElement("option"); blank.value=""; blank.textContent="— Select —"; sel.appendChild(blank);
-        GROUP_OPTIONS.forEach(opt=>{const o=document.createElement("option");o.value=opt;o.textContent=opt;if(opt===value)o.selected=true; sel.appendChild(o)});
-        sel.addEventListener("change",e=>{ edited[tag]=e.target.value; });
-        cell.appendChild(sel);
-      }else if(tag==="Due_Date"){
-        const inp=document.createElement("input"); inp.type="date"; inp.className="input"; inp.value=value;
-        inp.addEventListener("input",e=>{ edited[tag]=e.target.value; });
-        cell.appendChild(inp);
-      }else if(tag==="Due_Time"){
-        const wrap=document.createElement("div"); wrap.className="inline";
-        const toggle=document.createElement("label"); toggle.className="toggle";
-        const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=includeTime;
-        const cbtxt=document.createElement("span"); cbtxt.textContent="Include time";
-        toggle.appendChild(cb); toggle.appendChild(cbtxt);
-        const inp=document.createElement("input"); inp.type="time"; inp.className="input"; inp.value=value; inp.disabled=!includeTime;
-        cb.addEventListener("change",()=>{ includeTime=cb.checked; if(!includeTime){inp.value=""; edited[tag]=""} inp.disabled=!includeTime; });
-        inp.addEventListener("input",e=>{ edited[tag]=e.target.value; });
-        wrap.appendChild(toggle); wrap.appendChild(inp); cell.appendChild(wrap);
-      }else if(tag==="Scope"){
-        const ta=document.createElement("textarea"); ta.className="textarea"; ta.value=value; ta.placeholder="Enter scope details (will post as a comment)";
-        ta.addEventListener("input",e=>{ edited[tag]=e.target.value; }); cell.appendChild(ta);
-      }else if(control==="number"){
-        const inp=document.createElement("input"); inp.type="number"; inp.className="input"; inp.value=value;
-        inp.addEventListener("input",e=>{ edited[tag]=e.target.value; }); cell.appendChild(inp);
-      }else{
-        const inp=document.createElement("input"); inp.type="text"; inp.className="input"; inp.value=value;
-        inp.addEventListener("input",e=>{ edited[tag]=e.target.value; }); cell.appendChild(inp);
-      }
-
-      row.appendChild(key); row.appendChild(cell); el.appendChild(row);
-    });
-
-    $("#apply").disabled = false;
-  }
-
-  // === Build payload (uses dynamic column IDs) ===
-  function buildColumnUpdates(){
-    if(!boardSchema) return {};
-    const vals={};
-
-    // date
-    const d = edited.Due_Date || "";
-    const t = includeTime ? (edited.Due_Time || "") : "";
-    if(d && boardSchema.dateColId){
-      vals[boardSchema.dateColId] = t ? {"date": d, "time": t} : {"date": d};
+    async function getAuthToken() {
+      if (HARDCODED_TOKEN) return HARDCODED_TOKEN;
+      // Prefer session token provided to client apps
+      const { data: token } = await monday.get("sessionToken");
+      return token;
     }
 
-    // group/status
-    if(edited.Group && boardSchema.groupColId){
-      vals[boardSchema.groupColId] = {"label": edited.Group};
+    async function getContext() {
+      const { data } = await monday.get("context");
+      // Expect either item view context or board view context
+      // itemId may be missing if you’re not in an item view.
+      return {
+        boardId: data?.boardId || data?.boardIds?.[0],
+        itemId: data?.itemId,
+      };
     }
 
-    // simple mapped text/numbers
-    for(const k in mapping){
-      const m=mapping[k], v=edited[k];
-      if(v==null || v==="") continue;
-      // make sure the column exists on this board
-      if(!boardSchema.byId[m.columnId]) continue;
-      if(m.type==="text"){ vals[m.columnId]=v; }
-      else if(m.type==="numbers"){
-        const n=Number(String(v).replace(/[^0-9.\-]/g,""));
-        if(!isNaN(n)) vals[m.columnId]=String(n);
+    // ---- IMPORTANT: wrapper that does NOT stringify `variables` prematurely
+    async function runGql(tag, query, variables) {
+      const token = await getAuthToken();
+      const body = { query, variables }; // keep variables as a plain object
+      const res = await fetch("https://api.monday.com/v2", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": token,
+        },
+        body: JSON.stringify(body), // stringify once HERE
+      });
+
+      const json = await res.json();
+      if (json.errors && json.errors.length) {
+        console.log("There was an error in response from monday.com graphql API: ", json.errors);
+        const e = new Error("Graphql validation errors");
+        e.graphQLErrors = json.errors;
+        throw e;
       }
-    }
-    console.log("[Payload] column_values", vals);
-    return vals;
-  }
-  function buildItemNameFromEdited(){
-    const a=normText(edited.ENumber), b=normText(edited.Name_Client), c=normText(edited.Name_Project);
-    const parts=[a,b,c].filter(Boolean);
-    const name = parts.length? parts.join(" ") : null;
-    console.log("[Payload] item_name", name);
-    return name;
-  }
-
-  // === Schema fetch + dynamic IDs ===
-  async function fetchBoardSchema(){
-    const q=`query($bid:[ID!]){
-      boards(ids:$bid){
-        id
-        columns{id title type settings_str}
-      }
-    }`;
-    const res = await runGql("schema", q, {bid:[String(boardId)]});
-    const cols = (res.data?.boards?.[0]?.columns)||[];
-    const byId = {}; cols.forEach(c=>byId[c.id]=c);
-
-    // Find Group status column
-    const groupCol = cols.find(c => c.type==="color" || c.type==="status") || 
-                     cols.find(c => c.title?.toLowerCase?.() === "group" && (c.type==="status"||c.type==="color")) ||
-                     cols.find(c => c.title?.toLowerCase?.().includes("group") && (c.type==="status"||c.type==="color"));
-    const groupColId = groupCol?.id || "status06"; // last-resort fallback
-
-    // Find Due Date column
-    let dateCol = cols.find(c => c.title?.toLowerCase?.() === "due date" && c.type==="date");
-    if(!dateCol) dateCol = cols.find(c => c.type==="date"); // first date if exact title not found
-    const dateColId = dateCol?.id || "date6"; // fallback
-
-    // Parse status labels (be robust to different shapes)
-    let statusLabels=[];
-    const st = byId[groupColId];
-    if(st && st.settings_str){
-      try{
-        const s=JSON.parse(st.settings_str);
-        if (s.labels && typeof s.labels === "object") {
-          statusLabels = Object.values(s.labels).filter(Boolean);
-        } else if (Array.isArray(s.labels)) {
-          statusLabels = s.labels.filter(Boolean);
-        }
-        if ((!statusLabels || statusLabels.length===0) && Array.isArray(s.labels_groups) && s.labels_groups[0]?.labels){
-          statusLabels = Object.values(s.labels_groups[0].labels).filter(Boolean);
-        }
-        if ((!statusLabels || statusLabels.length===0) && s.labels_positions){
-          statusLabels = Object.keys(s.labels_positions);
-        }
-      }catch(_){}
+      console.log(`[GQL:${tag}]`, json);
+      return json.data;
     }
 
-    console.log("[Schema] groupColId", groupColId, "dateColId", dateColId);
-    console.log("[Schema] status labels", statusLabels);
-
-    return {byId, groupColId, dateColId, statusLabels};
-  }
-
-  // Lenient validator: if we can’t read labels, don’t block updates
-  function validatePayload(vals, schema){
-    const warnings=[];
-    const cleaned = {...vals};
-
-    for(const colId of Object.keys(cleaned)){
-      const col = schema.byId[colId];
-      if(!col){
-        warnings.push(`Column '${colId}' not found; skipping.`);
-        delete cleaned[colId];
-        continue;
-      }
-      if(col.type==="status" || col.type==="color"){
-        const label = cleaned[colId]?.label;
-        if(label && Array.isArray(schema.statusLabels) && schema.statusLabels.length>0){
-          if(!schema.statusLabels.includes(label)){
-            warnings.push(`Status label '${label}' not found in '${col.title}'; skipping.`);
-            delete cleaned[colId];
+    // optional helpers to inspect the board/item/columns if you need them
+    async function fetchSchema(boardId) {
+      const q = `
+        query ($bid: [ID!]) {
+          boards (ids: $bid) {
+            id
+            name
+            columns { id title type settings_str }
           }
+        }`;
+      return runGql("schema", q, { bid: [String(boardId)] });
+    }
+
+    async function fetchItem(boardId, itemId) {
+      const q = `
+        query ($bid: [ID!], $iid: [ID!]) {
+          items (ids: $iid) {
+            id
+            name
+            board { id }
+            column_values { id text value }
+          }
+        }`;
+      return runGql("item", q, { bid: [String(boardId)], iid: [String(itemId)] });
+    }
+
+    // --- The update logic (JSON first, String fallback)
+    async function applyToMonday() {
+      try {
+        if (!ctx) ctx = await getContext();
+        const { boardId, itemId } = ctx || {};
+        if (!boardId || !itemId) {
+          alert("Missing boardId or itemId in context. Open this app inside an item.");
+          return;
         }
+
+        // Build the *object* payload
+        const cleaned = buildColumnValues();
+
+        console.log("[Sanity] typeof cleaned =", typeof cleaned, "sample key:", Object.keys(cleaned)[0]);
+        console.log("[Payload] cleaned object:", cleaned);
+
+        // --- JSON mutation (preferred)
+        const mJson = `
+          mutation($bid: ID!, $iid: ID!, $vals: JSON!) {
+            change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $vals) { id }
+          }`;
+
+        try {
+          await runGql("set-columns(JSON)", mJson, {
+            bid: String(boardId),
+            iid: String(itemId),
+            vals: cleaned, // OBJECT here ✅
+          });
+          alert("Update succeeded via JSON!");
+          return;
+        } catch (err) {
+          const msg = (err && err.message) || "";
+          const more = (err && err.graphQLErrors || []).map(e => e && e.message).join(" | ");
+          console.log("JSON path failed:", msg, more);
+
+          const looksLikeTypeIssue =
+            /expecting type "JSON!"/i.test(msg + " " + more) ||
+            /Variable .* of type "String!" used in position expecting type "JSON!"/i.test(msg + " " + more) ||
+            /INTERNAL_SERVER_ERROR/i.test(more); // monday sometimes wraps type issues as 500
+
+          if (!looksLikeTypeIssue) throw err;
+        }
+
+        // --- Fallback: String mutation (legacy behavior)
+        const mStr = `
+          mutation($bid: ID!, $iid: ID!, $s: String!) {
+            change_multiple_column_values(board_id: $bid, item_id: $iid, column_values: $s) { id }
+          }`;
+
+        const s = JSON.stringify(cleaned); // STRING here ✅
+        console.log("[Retry] String! payload:", s);
+        await runGql("set-columns(String)", mStr, {
+          bid: String(boardId),
+          iid: String(itemId),
+          s,
+        });
+
+        alert("Update succeeded via String fallback!");
+      } catch (e) {
+        console.error("Update failed:", e);
+        alert("Update failed. See console for details.");
       }
-      if(col.type==="date"){
-        const v=cleaned[colId];
-        if(!v || !v.date){ warnings.push(`Date for '${col.title}' missing/invalid; skipping.`); delete cleaned[colId]; }
+    }
+
+    // Wire up UI
+    document.getElementById("applyBtn").addEventListener("click", applyToMonday);
+
+    // Optional: load and log context + schema on startup (handy while you wire IDs)
+    (async function boot() {
+      try {
+        ctx = await getContext();
+        console.log("[Context]", ctx);
+        if (ctx?.boardId) {
+          const schema = await fetchSchema(ctx.boardId);
+          console.log("[Schema]", schema);
+        }
+        if (ctx?.boardId && ctx?.itemId) {
+          const item = await fetchItem(ctx.boardId, ctx.itemId);
+          console.log("[Item]", item);
+        }
+      } catch (e) {
+        console.warn("Boot helpers failed (non-fatal):", e);
       }
-    }
-    if(warnings.length){ setMsg("Note: "+warnings.join(" ")); }
-    console.log("[Payload] cleaned", cleaned, "warnings:", warnings);
-    return cleaned;
-  }
-
-  // === Mutations (IDs as strings, JSON! only) ===
-  async function applyToMonday(vals, nameCandidate, scopeText){
-    if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
-    const cleaned = validatePayload(vals, boardSchema);
-
-    if(Object.keys(cleaned).length>0){
-      const mVar=`mutation($bid:ID!,$iid:ID!,$vals: JSON!){
-        change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$vals){ id }
-      }`;
-      await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
-    }
-
-    if(nameCandidate){
-      const mName=`mutation($iid:ID!,$name:String!){
-        change_item_name(item_id:$iid,name:$name){ id }
-      }`;
-      await runGql("set-name", mName, {iid:String(itemId),name:nameCandidate});
-    }
-
-    if(scopeText && scopeText.trim()){
-      const body=`Scope: ${scopeText.trim()}`;
-      const mUpd=`mutation($iid:ID!,$body:String!){
-        create_update(item_id:$iid, body:$body){ id }
-      }`;
-      await runGql("post-scope", mUpd, {iid:String(itemId),body});
-    }
-  }
-
-  // === Monday context/theme ===
-  monday.listen("context",(res)=>{
-    const c=res.data||{};
-    itemId=c.itemId; boardId=c.boardId;
-    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`;
-  });
-  monday.listen("theme",(res)=>{$("#theme-pill").innerText=`Theme: ${res.data?.theme||"auto"}`});
-
-  // === UI wiring ===
-  const dz=$("#dropzone"), fi=$("#fileinput");
-  $("#choose").onclick=()=>fi.click();
-  fi.addEventListener("change",e=>{
-    const f=e.target.files?.[0];
-    if(f && /\.docx$/i.test(f.name)) handleLocalFile(f); else setMsg("Please choose a .docx");
-  });
-  dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("k")});
-  dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("k")});
-  dz.addEventListener("drop",e=>{
-    e.preventDefault();dz.classList.remove("k");
-    const f=e.dataTransfer.files?.[0];
-    if(!f){setMsg("No file dropped");return}
-    if(!/\.docx$/i.test(f.name)){setMsg("Please drop a .docx file");return}
-    handleLocalFile(f);
-  });
-
-  $("#apply").onclick=async()=>{
-    try{
-      if(!edited || Object.keys(edited).length===0){ setMsg("Nothing to apply"); return }
-      setMsg("Building updates…");
-      // Ensure schema is loaded so dynamic IDs exist before building payload
-      if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
-      const vals = buildColumnUpdates();
-      const nameCandidate = buildItemNameFromEdited();
-      const scopeText = edited.Scope || "";
-      if(Object.keys(vals).length===0 && !nameCandidate && !scopeText){
-        setMsg("Nothing mappable found"); return;
-      }
-      setMsg("Updating item…");
-      await applyToMonday(vals, nameCandidate, scopeText);
-      setMsg("Done");
-    }catch(e){ showErr(e,"Update failed") }
-  };
-
-  // Local file flow
-  async function handleLocalFile(file){
-    try{
-      setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
-      const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");
-      const xml=await parseDocxArrayBuffer(ab);
-      setMsg("Parsing fields…");
-      const extracted = extractSdtWithDOM(xml);
-      const filtered = {};
-      Object.keys(extracted).forEach(k=>{ if(!IGNORED.has(k)) filtered[k]=extracted[k] });
-      renderEditablePreview(filtered);
-      setMsg("Ready to apply");
-    }catch(e){ showErr(e,"Could not read .docx") }
-  }
-
-  // Global error surfacing
-  window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
-});
-</script>
+    })();
+  </script>
 </body>
 </html>
