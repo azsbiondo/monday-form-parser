@@ -2,205 +2,138 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Update Item — status06 & date6</title>
+  <title>Field Mapper — Preview • Edit • Apply</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Monday SDK: CDN only -->
+  <!-- Monday SDK -->
   <script src="https://unpkg.com/monday-sdk-js/dist/main.js"></script>
   <style>
-    /* ---------- Base + Dark Mode ---------- */
+    /* ===== Theme (light/dark) ===== */
     :root{
-      --bg: #f6f7f9;
-      --card: #ffffff;
-      --text: #1f1f1f;
-      --muted: #5f6a79;
-      --border: #e6e8ec;
-      --brand: #1f7a54;
-      --brand-600:#156346;
-      --brand-050:#f0fff7;
-      --warn:#b54708;
-      --ok:#177245;
-      --shadow: 0 6px 18px rgba(16,24,40,0.08);
-      --radius: 14px;
-      --gap: 14px;
-      --input-h: 38px;
+      --bg: #f6f7f9; --card:#fff; --text:#1f2328; --muted:#6b7280; --border:#e5e7eb;
+      --accent:#1f7a54; --accent-600:#156346; --accent-050:#eefaf4;
+      --warn:#b54708; --ok:#137c4b; --shadow:0 6px 18px rgba(16,24,40,.08);
+      --radius:14px; --gap:12px; --input-h:38px;
     }
     @media (prefers-color-scheme: dark){
       :root{
-        --bg: #0f141a;
-        --card: #151b23;
-        --text: #e6edf3;
-        --muted: #9aa7b5;
-        --border: #2a3441;
-        --brand: #3dd68c;
-        --brand-600:#27b06f;
-        --brand-050:#0f1f19;
-        --warn:#ffb020;
-        --ok:#36d399;
-        --shadow: 0 6px 18px rgba(0,0,0,0.45);
+        --bg:#0f141a; --card:#151b23; --text:#e6edf3; --muted:#9aa7b5; --border:#283241;
+        --accent:#36cf8e; --accent-600:#27b06f; --accent-050:#0f1f19;
+        --shadow:0 6px 18px rgba(0,0,0,.45);
       }
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{
-      margin:0; padding:24px;
-      font: 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color:var(--text); background: var(--bg);
-    }
+    body{margin:0;padding:24px;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:var(--bg)}
+    .wrap{max-width:1200px;margin:0 auto;display:grid;gap:var(--gap);grid-template-columns:1.1fr .9fr}
+    @media (max-width: 1024px){ .wrap{grid-template-columns:1fr} }
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
+    .card h2{margin:0 0 4px;font-size:18px}
+    .sub{color:var(--muted);margin-bottom:10px}
 
-    /* ---------- Layout ---------- */
-    .wrap{max-width:1060px; margin:0 auto; display:grid; gap: var(--gap); grid-template-columns: 1.2fr .8fr}
-    @media (max-width: 980px){ .wrap{ grid-template-columns: 1fr } }
-
-    .card{
-      background: var(--card);
-      border:1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 18px;
-    }
-    .card h2{margin:0 0 4px; font-size:18px}
-    .sub{color:var(--muted); margin-bottom:10px}
-
-    /* ---------- Dropzone ---------- */
-    .dz{
-      border:1.5px dashed var(--border);
-      border-radius: calc(var(--radius) - 2px);
-      padding: 22px 18px;
-      background: linear-gradient(0deg, rgba(127,127,127,.04), rgba(127,127,127,.04));
-      display:flex; align-items:center; gap:14px; cursor:pointer; transition: .18s ease;
-      min-height: 84px;
-    }
-    .dz.dragover{ border-color: var(--brand); background: var(--brand-050); }
-    .dz .icon{width:34px; height:34px; border-radius:10px; background: var(--brand); display:grid; place-items:center; color:#fff}
-    .dz .copy{display:flex; flex-direction:column; gap:4px}
-    .dz .title{font-weight:600}
-    .dz .hint{color:var(--muted)}
-
-    textarea{
-      width:100%; min-height: 120px;
-      border:1px solid var(--border); background:transparent; color:var(--text);
-      border-radius: 10px; padding:10px; resize:vertical; outline:none;
-    }
-    textarea:focus{ box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); border-color: var(--brand-600); }
-
-    /* ---------- Form ---------- */
-    .grid{display:grid; gap: var(--gap)}
-    .row{display:flex; gap: var(--gap); flex-wrap:wrap}
-    label{font-size:12px; color:var(--muted)}
-    input[type="text"], input[type="date"], select{
-      height: var(--input-h);
-      padding: 0 10px; border-radius: 10px;
-      border:1px solid var(--border); background: transparent; color: var(--text); outline:none;
-      min-width: 160px;
-    }
-    input[type="text"]:focus, input[type="date"]:focus, select:focus{
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); border-color: var(--brand-600);
-    }
-
-    .btn{
-      height: 40px; padding: 0 14px; border-radius: 10px; border:1px solid transparent; cursor:pointer;
-      display:inline-flex; align-items:center; gap:8px; font-weight:600;
-    }
-    .btn.primary{ background: var(--brand); color:#0b1510; }
-    .btn.primary:disabled{ opacity:.6; cursor:not-allowed }
-    .btn.ghost{ background: transparent; border-color: var(--border); color: var(--text) }
-    .btn.low{ background: color-mix(in srgb, var(--brand) 18%, transparent); color: var(--brand-600) }
-
+    /* Dropzone */
+    .dz{border:1.5px dashed var(--border);border-radius:12px;padding:20px 16px;display:flex;gap:14px;align-items:center;cursor:pointer;min-height:84px;transition:.18s;background:linear-gradient(0deg,rgba(127,127,127,.04),rgba(127,127,127,.04))}
+    .dz.dragover{border-color:var(--accent);background:var(--accent-050)}
+    .dz .icon{width:36px;height:36px;border-radius:10px;background:var(--accent);display:grid;place-items:center;color:#fff}
+    .pill{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-600);font-size:12px}
     .muted{color:var(--muted)}
-    .pill{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px;
-      background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand-600); font-size:12px}
     .spacer{flex:1}
 
-    details{border-top:1px dashed var(--border); padding-top:10px; margin-top:8px}
-    pre{margin:8px 0 0; background: #0b0b0b10; padding:10px; border-radius:8px; overflow:auto}
+    textarea{width:100%;min-height:110px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--text);padding:10px;resize:vertical;outline:none}
+    textarea:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent);border-color:var(--accent-600)}
+
+    /* Controls */
+    .row{display:flex;gap:var(--gap);flex-wrap:wrap;align-items:center}
+    .btn{height:40px;padding:0 14px;border-radius:10px;border:1px solid transparent;cursor:pointer;display:inline-flex;gap:8px;align-items:center;font-weight:600}
+    .btn.primary{background:var(--accent);color:#0b1510}
+    .btn.ghost{background:transparent;border-color:var(--border);color:var(--text)}
+    .btn.low{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent-600)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+
+    /* Field map table */
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    th,td{padding:8px 10px;vertical-align:top}
+    th{font-weight:600;text-align:left;color:var(--muted);font-size:12px}
+    tr.field{background:linear-gradient(0deg,rgba(127,127,127,.04),rgba(127,127,127,.04));border-radius:10px}
+    tr.field td{border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+    tr.field td:first-child{border-left:1px solid var(--border);border-radius:10px 0 0 10px}
+    tr.field td:last-child{border-right:1px solid var(--border);border-radius:0 10px 10px 0}
+
+    select, input[type="text"], input[type="date"]{height:38px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:10px;padding:0 10px;min-width:160px;outline:none}
+    select:focus, input[type="text"]:focus, input[type="date"]:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent);border-color:var(--accent-600)}
+
+    .stack{display:flex;gap:8px;flex-wrap:wrap}
+    .mini{font-size:12px}
     .ok{color:var(--ok)} .warn{color:var(--warn)}
+    details pre{margin:8px 0 0;background:#0b0b0b10;padding:10px;border-radius:8px;overflow:auto}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <!-- LEFT: Input / Dropzone -->
+    <!-- LEFT: Ingest & Preview -->
     <section class="card">
-      <h2>Quick capture</h2>
-      <div class="sub">Drag in a file or paste text/JSON. We’ll try to detect status, date & time.</div>
+      <h2>Ingest data</h2>
+      <div class="sub">Drop a file or paste JSON/text. We’ll parse fields, let you edit, map to columns, then apply.</div>
 
-      <div id="dz" class="dz" tabindex="0" aria-label="Drop a file or click to paste">
+      <div id="dz" class="dz" tabindex="0">
         <div class="icon" aria-hidden="true">
-          <!-- paper icon -->
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M8 2h5l5 5v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M13 2v5h5" stroke="#fff" stroke-width="1.5"/></svg>
         </div>
-        <div class="copy">
-          <div class="title">Drop file / click to paste</div>
-          <div class="hint">Accepts plain text or JSON (e.g. { "status":"Done", "date":"2025-09-15", "time":"13:00" })</div>
+        <div>
+          <div style="font-weight:600">Drop file / click to paste</div>
+          <div class="muted mini">JSON like: { "item_name":"…", "status":"Done", "date":"2025-09-15", "time":"13:00" }</div>
         </div>
         <div class="spacer"></div>
-        <span class="pill">status06</span>
-        <span class="pill">date6</span>
+        <span class="pill">Preview → Edit → Apply</span>
       </div>
 
-      <div class="grid" style="margin-top:12px">
+      <div style="margin-top:12px">
         <textarea id="paste" placeholder="Or paste here…"></textarea>
-        <div class="row">
-          <button id="btnParse" class="btn ghost">Extract from input</button>
-          <button id="btnClear" class="btn ghost">Clear</button>
+        <div class="row" style="margin-top:8px">
+          <button id="btnParse" class="btn ghost">Parse</button>
+          <button id="btnClear" class="btn ghost" type="button">Clear</button>
           <span id="hintL" class="muted"></span>
         </div>
       </div>
 
-      <details id="extractPanel" style="margin-top:6px">
-        <summary class="muted">Extracted preview</summary>
-        <div id="extractOut" class="muted"><em>Nothing yet.</em></div>
+      <details id="rawPanel" style="margin-top:8px">
+        <summary class="muted">Raw detected</summary>
+        <div id="rawOut" class="muted"><em>Nothing yet.</em></div>
       </details>
     </section>
 
-    <!-- RIGHT: Controls & Apply -->
+    <!-- RIGHT: Field mapper & Apply -->
     <section class="card">
-      <h2>Set values</h2>
-      <div class="sub">24-hour time; minutes 00 or 30; seconds forced to 00; time only if Date column allows it.</div>
+      <h2>Preview & map</h2>
+      <div class="sub">Edit values, choose target columns, then apply to the item.</div>
 
-      <div class="grid">
-        <div>
-          <label>Status label (status06)</label><br/>
-          <input id="statusLabel" type="text" placeholder="e.g., Done / In progress / Stuck" />
-          <div class="muted" style="margin-top:4px">Will validate against the board’s labels.</div>
-        </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:25%">Field</th>
+            <th style="width:45%">Value</th>
+            <th style="width:30%">Map to column</th>
+          </tr>
+        </thead>
+        <tbody id="fieldBody">
+          <!-- rows injected -->
+        </tbody>
+      </table>
 
-        <div class="row">
-          <div>
-            <label>Date (date6)</label><br/>
-            <input id="dateOnly" type="date" />
-          </div>
-
-          <div>
-            <label>Hour (24h)</label><br/>
-            <select id="hour"><option value="">—</option></select>
-          </div>
-
-          <div>
-            <label>Minute</label><br/>
-            <select id="minute">
-              <option value="">—</option>
-              <option value="00">00</option>
-              <option value="30">30</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="row" style="align-items:center">
-          <button id="btnApply" class="btn primary">Apply to item</button>
-          <button id="btnLabels" class="btn low" type="button">Show status labels</button>
-          <span id="hintR" class="muted"></span>
-        </div>
-
-        <details>
-          <summary class="muted">Log</summary>
-          <div id="out" class="muted"></div>
-        </details>
+      <div class="row" style="margin-top:10px">
+        <button id="btnApply" class="btn primary">Apply to item</button>
+        <button id="btnRefreshCols" class="btn low" type="button">Reload board columns</button>
+        <span id="hintR" class="muted"></span>
       </div>
+
+      <details style="margin-top:8px">
+        <summary class="muted">Log</summary>
+        <div id="out" class="muted"></div>
+      </details>
     </section>
   </div>
 
 <script>
-/* ================= Monday SDK & Helpers ================= */
+/** ======== Monday SDK, context & state ======== */
 const monday = window.mondaySdk();
 const $ = id => document.getElementById(id);
 const write = (html, cls="")=>{
@@ -209,239 +142,343 @@ const write = (html, cls="")=>{
 };
 const j = o => JSON.stringify(o,null,2);
 
-let ctx=null, boardColumns=null;
+let ctx=null, boardCols=[], detected={}, rows=[];
 
 monday.listen("context", ({data})=>{
-  ctx = data;
-  $("hintL").textContent = "Ready";
-  $("hintR").textContent = "";
+  ctx=data;
+  $("hintL").textContent="Ready";
 });
 
-/* ================= Populate hour dropdown (00..23) ================= */
-(function fillHours(){
-  const sel = $("hour");
-  for(let h=0; h<24; h++){
-    const v = String(h).padStart(2,"0");
-    const opt = document.createElement("option");
-    opt.value=v; opt.textContent=v; sel.appendChild(opt);
-  }
-})();
-
-/* ================= Board schema helpers ================= */
-async function ensureColumns(boardId){
-  if(boardColumns) return boardColumns;
-  const q=`
-    query($ids:[ID!]){
-      boards(ids:$ids){
-        id
-        columns{ id title type settings_str }
-      }
-    }`;
-  const res = await monday.api(q,{variables:{ids:String(boardId)}});
-  if(res.errors) throw new Error(res.errors[0].message);
-  boardColumns = res.data.boards?.[0]?.columns || [];
-  return boardColumns;
+/** ======== Board schema ======== */
+async function loadBoardColumns(boardId){
+  const q=`query($ids:[ID!]){ boards(ids:$ids){ id columns{ id title type settings_str }}}`;
+  const r=await monday.api(q,{variables:{ids:String(boardId)}});
+  boardCols = r?.data?.boards?.[0]?.columns || [];
+  return boardCols;
 }
-function parseStatusLabels(settings_str){
+function parseStatusLabels(col){
   try{
-    const s=JSON.parse(settings_str||"{}");
+    const s=JSON.parse(col?.settings_str||"{}");
     const labels = s.labels || s.labels_positions || {};
-    return Object.values(labels).filter(Boolean).map(String);
-  }catch{ return []; }
+    return Object.entries(labels).map(([k,v])=>({id:k,label:String(v)})).filter(x=>x.label);
+  }catch{return []}
 }
-function isDateTimeEnabled(settings_str){
+function dateAllowsTime(col){
   try{
-    const s=JSON.parse(settings_str||"{}");
-    return Boolean(s.time || s.enable_time || s.allow_time);
-  }catch{ return false; }
+    const s=JSON.parse(col?.settings_str||"{}");
+    return !!(s.time || s.enable_time || s.allow_time);
+  }catch{return false}
 }
-function buildDateValue(settings_str, dateISO, hh, mm){
-  if(!dateISO) return null;
-  const allowTime = isDateTimeEnabled(settings_str);
-  if(!allowTime) return { date: dateISO };
-  if(hh){
-    const hour = hh.padStart(2,"0");
-    const minute = (mm || "00").padStart(2,"0");
-    return { date: dateISO, time: `${hour}:${minute}:00` };
+
+/** ======== Dropzone / Paste ======== */
+const dz=$("dz"), paste=$("paste"), rawPanel=$("rawPanel"), rawOut=$("rawOut");
+dz.addEventListener("dragover",(e)=>{e.preventDefault();dz.classList.add("dragover")});
+dz.addEventListener("dragleave",()=>dz.classList.remove("dragover"));
+dz.addEventListener("drop",async(e)=>{
+  e.preventDefault(); dz.classList.remove("dragover");
+  if(e.dataTransfer.files?.length){
+    const file=e.dataTransfer.files[0]; const text=await file.text(); paste.value=text;
+  }else{
+    const text=e.dataTransfer.getData("text"); paste.value=text;
   }
-  return { date: dateISO };
-}
-
-/* ================= Dropzone, paste, and extraction ================= */
-const dz = $("dz"), paste=$("paste");
-const extractPanel=$("extractPanel"), extractOut=$("extractOut");
-
-function setDz(on){ dz.classList.toggle("dragover", !!on); }
-function clearAll(){
-  paste.value=""; extractOut.innerHTML="<em>Nothing yet.</em>"; extractPanel.open=false;
-  $("statusLabel").value=""; $("dateOnly").value=""; $("hour").value=""; $("minute").value="";
-  $("out").innerHTML=""; $("hintL").textContent=""; $("hintR").textContent="";
-}
-dz.addEventListener("dragover",(e)=>{ e.preventDefault(); setDz(true); });
-dz.addEventListener("dragleave",()=> setDz(false));
-dz.addEventListener("drop", async (e)=>{
-  e.preventDefault(); setDz(false);
-  try{
-    const dt=e.dataTransfer;
-    let text="";
-    if(dt.files && dt.files.length){ text = await fileToText(dt.files[0]); }
-    else if(dt.getData){ text = dt.getData("text") || ""; }
-    paste.value = text;
-    $("btnParse").click();
-  }catch(err){ showExtract({ error:String(err) }); }
+  $("btnParse").click();
 });
-dz.addEventListener("click",()=> paste.focus());
-$("btnClear").addEventListener("click", clearAll);
+dz.addEventListener("click",()=>paste.focus());
+$("btnClear").addEventListener("click",()=>{
+  paste.value=""; rawOut.innerHTML="<em>Nothing yet.</em>"; rawPanel.open=false;
+  detected={}; rows=[]; $("fieldBody").innerHTML="";
+  $("out").innerHTML=""; $("hintL").textContent=""; $("hintR").textContent="";
+});
 
-function fileToText(file){
-  return new Promise((res,rej)=>{
-    const r=new FileReader(); r.onload=()=>res(String(r.result||"")); r.onerror=()=>rej(r.error||new Error("Read failed")); r.readAsText(file);
+/** ======== Parsing & field normalization ======== */
+function tryJson(s){ try{return JSON.parse(s)}catch{return null} }
+function scanDateISO(s){
+  const m=String(s).match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+  return m?`${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`:null;
+}
+function scanTime(s){
+  const m=String(s).match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if(!m) return null;
+  const hh=String(m[1]).padStart(2,"0"), mm=m[2]==="30"?"30":"00";
+  return `${hh}:${mm}:00`;
+}
+
+/* Heuristics: normalize to a compact dictionary */
+function normalize(input){
+  const out={};
+  if(typeof input==="object" && input){
+    for(const [k,v] of Object.entries(input)){
+      const key=k.toLowerCase();
+      if(key==="item_name" || key==="name" || key==="item"){
+        out.item_name=String(v);
+      }else if(key.includes("status")){
+        out.status=String(v);
+      }else if(key==="date" || key==="date6" || key.includes("date")){
+        const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : scanDateISO(v);
+        if(iso) out.date=iso;
+      }else if(key==="time" || key.includes("time")){
+        const t = /^\d{2}:\d{2}(:\d{2})?$/.test(String(v)) ? String(v) : scanTime(v);
+        if(t){ const [hh,mm] = t.split(":"); out.hour=hh; out.minute=(mm==="30"?"30":"00"); }
+      }else{
+        // keep other fields verbatim
+        out[k]=v;
+      }
+    }
+  }else{
+    // text: try to pluck bits
+    const iso=scanDateISO(input); if(iso) out.date=iso;
+    const t=scanTime(input); if(t){ const [hh,mm]=t.split(":"); out.hour=hh; out.minute=(mm==="30"?"30":"00"); }
+  }
+  return out;
+}
+
+/** ======== Field rows UI ======== */
+function makeEl(tag, attrs={}, children=[]){
+  const el=document.createElement(tag);
+  Object.entries(attrs).forEach(([k,v])=>{
+    if(k==="class") el.className=v;
+    else if(k==="html") el.innerHTML=v;
+    else el.setAttribute(k,v);
+  });
+  [].concat(children).forEach(ch=> el.appendChild(ch));
+  return el;
+}
+
+function renderRows(){
+  const body=$("fieldBody"); body.innerHTML="";
+  rows = []; // reset
+
+  // Build editable rows from detected dict
+  const keysOrder = Object.keys(detected);
+
+  // Known preferred order
+  const preferred=["item_name","status","date","hour","minute"];
+  preferred.concat(keysOrder.filter(k=>!preferred.includes(k))).forEach(key=>{
+    if(!(key in detected)) return;
+    const row = buildRow(key, detected[key]);
+    rows.push(row);
+    body.appendChild(row.tr);
   });
 }
-function showExtract(o){
-  extractOut.innerHTML = `<pre>${j(o)}</pre>`;
-  extractPanel.open = true;
+
+function buildRow(key, value){
+  const tr=makeEl("tr",{class:"field"});
+  const tdLabel=makeEl("td",{});
+  const tdValue=makeEl("td",{});
+  const tdMap=makeEl("td",{});
+
+  // Label
+  tdLabel.innerHTML = `<div style="font-weight:600">${key}</div><div class="muted mini"></div>`;
+
+  // Value editor
+  let editor;
+  if(key==="date"){
+    editor = makeEl("input",{type:"date", value: value || ""});
+  }else if(key==="hour"){
+    editor = makeEl("select",{});
+    editor.appendChild(new Option("—",""));
+    for(let h=0;h<24;h++){ const v=String(h).padStart(2,"0"); editor.appendChild(new Option(v,v)); }
+    editor.value = (value||"").padStart(2,"0");
+  }else if(key==="minute"){
+    editor = makeEl("select",{});
+    editor.appendChild(new Option("—",""));
+    editor.appendChild(new Option("00","00"));
+    editor.appendChild(new Option("30","30"));
+    editor.value = (value==="30"?"30": value==="00"?"00":"");
+  }else{
+    editor = makeEl("input",{type:"text", value: value ?? ""});
+  }
+  tdValue.appendChild(editor);
+
+  // Column mapping select
+  const mapSel = makeEl("select",{});
+  mapSel.appendChild(new Option("— do not apply —",""));
+  // Suggest sensible defaults
+  const suggest = (id)=> boardCols.find(c=>c.id===id);
+  const like = (type)=> boardCols.filter(c=>c.type===type);
+
+  const candidates = [
+    // high-confidence aliases
+    ...(key==="item_name" ? [suggest("name")].filter(Boolean) : []),
+    ...(key==="status"    ? like("color") : []),
+    ...(key==="date"      ? like("date")  : []),
+    // otherwise: offer all columns
+    ...boardCols
+  ];
+
+  // Deduplicate while preserving order
+  const seen=new Set();
+  candidates.forEach(c=>{
+    if(!c) return;
+    if(seen.has(c.id)) return;
+    seen.add(c.id);
+    mapSel.appendChild(new Option(`${c.title} • ${c.id} (${c.type})`, c.id));
+  });
+
+  // Auto-select common targets
+  if(key==="item_name"){ mapSel.value="name"; }
+  if(key==="status"){ const s=boardCols.find(c=>c.type==="color"); if(s) mapSel.value=s.id; }
+  if(key==="date"){ const d=boardCols.find(c=>c.type==="date"); if(d) mapSel.value=d.id; }
+
+  tdMap.appendChild(mapSel);
+
+  tr.appendChild(tdLabel); tr.appendChild(tdValue); tr.appendChild(tdMap);
+
+  return {
+    key,
+    tr,
+    getValue(){
+      if(key==="hour"||key==="minute"||key==="date") return editor.value || "";
+      return editor.value;
+    },
+    getTarget(){ return mapSel.value || ""; }
+  };
 }
-function extractFields(raw, allowed){
-  const txt=String(raw||"");
-  let status=null, dateISO=null, hour=null, minute=null;
 
-  // Try JSON
-  try{
-    const obj=JSON.parse(txt);
-    if(typeof obj==="object"){
-      const st = obj.status || obj.Status || obj.label || obj.status_label;
-      if(st && typeof st==="string") status=st.trim();
+/** ======== Compose payload for Monday ======== */
+function buildColumnValues(){
+  const byCol = {}; // { colId: valueForThatColumn }
 
-      const d = obj.date || obj.Date || obj.date6 || obj.dateOnly;
-      if(d && /^\d{4}-\d{2}-\d{2}$/.test(d)) dateISO=d;
+  // Group minute/hour with date row mapping (if all point to the same date col)
+  // Strategy:
+  // 1) collect row targets
+  const map = {};
+  rows.forEach(r=>{
+    const col = r.getTarget();
+    if(!col) return;
+    (map[col] ||= []).push(r);
+  });
 
-      const t = obj.time || obj.Time || obj.time24 || obj.time_str;
-      if(t && /^\d{2}:\d{2}/.test(t)){
-        const [hh,mm] = String(t).split(":");
-        hour = hh.padStart(2,"0"); minute = (mm==="30"?"30":"00");
+  for(const [colId, rs] of Object.entries(map)){
+    const col = boardCols.find(c=>c.id===colId);
+    if(!col) continue;
+
+    if(colId==="name"){
+      const rName = rs.find(r=>r.key==="item_name");
+      if(rName){
+        // item name is not part of change_multiple_column_values; we’ll change it separately.
+        byCol["__item_name__"] = rName.getValue();
       }
+      continue;
     }
-  }catch{}
 
-  // Fallback: regex scan
-  if(!dateISO){
-    const m = txt.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
-    if(m){ dateISO = `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`; }
-  }
-  if(!hour){
-    const t = txt.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-    if(t){ hour = String(t[1]).padStart(2,"0"); minute = (t[2]==="30")?"30":"00"; }
-  }
-  if(!status && allowed?.length){
-    const low = txt.toLowerCase();
-    status = allowed.find(l=> low.includes(String(l).toLowerCase()) ) || null;
-  }
-  return { status, dateISO, hour, minute };
-}
+    if(col.type==="date"){
+      // Look for date, hour, minute rows mapped here
+      const vDate = rs.find(r=>r.key==="date")?.getValue() || "";
+      const vHour = rs.find(r=>r.key==="hour")?.getValue() || "";
+      const vMin  = rs.find(r=>r.key==="minute")?.getValue() || "";
 
-$("btnParse").addEventListener("click", async ()=>{
-  try{
-    $("hintL").textContent = "Scanning…";
-    if(!ctx?.boardId) throw new Error("Open inside an item to load board schema.");
-    const cols = await ensureColumns(ctx.boardId);
-    const statusCol = cols.find(c=>c.id==="status06");
-    const dateCol   = cols.find(c=>c.id==="date6");
-    const allowed = statusCol ? parseStatusLabels(statusCol.settings_str) : [];
-
-    const res = extractFields(paste.value, allowed);
-    if(res.status) $("statusLabel").value = res.status;
-    if(res.dateISO) $("dateOnly").value = res.dateISO;
-    if(res.hour) $("hour").value = res.hour;
-    if(res.minute) $("minute").value = (res.minute==="30"?"30":"00");
-
-    showExtract({
-      detected: res,
-      meta: {
-        statusMatchedAgainst: allowed,
-        dateTimeEnabled: dateCol ? isDateTimeEnabled(dateCol.settings_str) : null
-      }
-    });
-  }catch(e){
-    showExtract({ error: e?.message||String(e) });
-  }finally{
-    $("hintL").textContent = "";
-  }
-});
-
-/* ================= Apply ================= */
-async function applyValues(){
-  $("hintR").textContent = "Applying…";
-  $("btnApply").disabled = true;
-  $("out").innerHTML = "";
-
-  try{
-    if(!ctx?.boardId || !ctx?.itemId) throw new Error("Open this page inside a Monday item view.");
-    const boardId = ctx.boardId, itemId = ctx.itemId;
-    const cols = await ensureColumns(boardId);
-
-    const statusCol = cols.find(c=>c.id==="status06");
-    const dateCol   = cols.find(c=>c.id==="date6");
-    if(!dateCol) throw new Error('Column "date6" not found on this board.');
-
-    const vals = {};
-
-    // Status (optional)
-    const labelIn = ($("statusLabel").value||"").trim();
-    if(statusCol && labelIn){
-      const allowed = parseStatusLabels(statusCol.settings_str).map(x=>x.toLowerCase());
-      if(allowed.includes(labelIn.toLowerCase())){
-        vals["status06"] = { label: labelIn };
+      if(!vDate){ continue; }
+      const allowTime = dateAllowsTime(col);
+      if(allowTime && vHour){
+        const hh=String(vHour).padStart(2,"0");
+        const mm=vMin==="30"?"30":"00";
+        byCol[colId] = { date: vDate, time: `${hh}:${mm}:00` };
       }else{
-        write(`Skipping status: "<b>${labelIn}</b>" not found among board labels.`, "warn");
+        byCol[colId] = { date: vDate };
       }
+      continue;
     }
 
-    // Date (+ optional time if allowed)
-    const dateISO = ($("dateOnly").value||"").trim();
-    const hh = ($("hour").value||"").trim();
-    const mm = ($("minute").value||"").trim();
-    const dateVal = buildDateValue(dateCol.settings_str, dateISO, hh, mm);
-    if(dateVal) vals["date6"] = dateVal;
+    if(col.type==="color"){
+      // status label text -> validate against labels
+      const r = rs.find(x=>x.key==="status");
+      if(!r) continue;
+      const want = String(r.getValue()||"").trim();
+      if(!want) continue;
+      const labels = parseStatusLabels(col).map(x=>x.label.toLowerCase());
+      if(labels.includes(want.toLowerCase())){
+        byCol[colId] = { label: want };
+      }else{
+        write(`Skipping status for <b>${col.title}</b>: label "<b>${want}</b>" not found.`, "warn");
+      }
+      continue;
+    }
 
-    if(Object.keys(vals).length===0){
-      write(`Nothing to update. Provide Status and/or Date.`, "warn");
+    // Default: set as text
+    const rAny = rs[0];
+    if(rAny){
+      byCol[colId] = String(rAny.getValue() ?? "");
+    }
+  }
+
+  return byCol;
+}
+
+/** ======== Apply to Monday ======== */
+async function apply(){
+  $("hintR").textContent="Applying…";
+  $("btnApply").disabled=true; $("out").innerHTML="";
+
+  try{
+    if(!ctx?.boardId || !ctx?.itemId) throw new Error("Open this app inside a Monday item.");
+    const boardId = ctx.boardId, itemId = ctx.itemId;
+
+    const colVals = buildColumnValues();
+
+    // Handle item name
+    const itemName = colVals["__item_name__"]; delete colVals["__item_name__"];
+
+    if(Object.keys(colVals).length===0 && !itemName){
+      write("Nothing to apply. Map at least one field to a column.", "warn");
       return;
     }
 
-    // Send change_multiple_column_values
-    const m = `
-      mutation($bid:ID!,$iid:ID!,$vals:JSON!){
-        change_multiple_column_values(board_id:$bid, item_id:$iid, column_values:$vals){ id }
+    if(Object.keys(colVals).length){
+      const m = `mutation($b:ID!,$i:ID!,$v:JSON!){
+        change_multiple_column_values(board_id:$b,item_id:$i,column_values:$v){ id }
       }`;
-    const variables = { bid:String(boardId), iid:String(itemId), vals: JSON.stringify(vals) };
+      const variables = { b:String(boardId), i:String(itemId), v: JSON.stringify(colVals) };
+      write(`<details><summary>column_values</summary><pre>${j(colVals)}</pre></details>`);
+      const r = await monday.api(m,{variables});
+      if(r.errors) throw new Error(r.errors[0].message);
+    }
 
-    write(`<details><summary>column_values</summary><pre>${j(vals)}</pre></details>`);
-    const r = await monday.api(m,{variables});
-    if(r.errors) throw new Error(r.errors[0].message);
+    if(itemName){
+      const mu = `mutation($b:ID!,$i:ID!,$name:String!){
+        change_simple_column_value(board_id:$b, item_id:$i, column_id:"name", value:$name){ id }
+      }`;
+      const rv = await monday.api(mu,{variables:{b:String(boardId),i:String(itemId),name:itemName}});
+      if(rv.errors) throw new Error(rv.errors[0].message);
+      write(`Item name updated.`, "ok");
+    }
 
-    write(`<b class="ok">✅ Update succeeded</b>`,"ok");
+    write(`<b class="ok">✅ Done</b>`,"ok");
   }catch(e){
     write(`<b class="warn">❌ ${e?.message||e}</b>`,"warn");
   }finally{
-    $("btnApply").disabled = false;
-    $("hintR").textContent = "";
+    $("btnApply").disabled=false; $("hintR").textContent="";
   }
 }
 
-$("btnApply").addEventListener("click", applyValues);
-
-/* Show allowed labels helper */
-$("btnLabels").addEventListener("click", async ()=>{
+/** ======== Wire up ======== */
+$("btnParse").addEventListener("click", async ()=>{
   try{
-    if(!ctx?.boardId) return;
-    const cols = await ensureColumns(ctx.boardId);
-    const statusCol = cols.find(c=>c.id==="status06");
-    const labels = parseStatusLabels(statusCol?.settings_str||"");
-    write(`<details open><summary>Status labels (status06)</summary><pre>${j(labels)}</pre></details>`);
+    $("hintL").textContent="Parsing…";
+    if(!ctx?.boardId) throw new Error("Board not available in context.");
+    await loadBoardColumns(ctx.boardId);
+
+    const raw = paste.value.trim();
+    const maybe = tryJson(raw);
+    detected = normalize(maybe ?? raw);
+
+    rawOut.innerHTML=`<pre>${j(detected)}</pre>`;
+    rawPanel.open=true;
+
+    renderRows();
   }catch(e){
-    write(`Couldn’t load labels: ${e?.message||e}`,"warn");
+    rawOut.innerHTML=`<div class="warn">Error: ${e?.message||e}</div>`;
+    rawPanel.open=true;
+  }finally{
+    $("hintL").textContent="";
   }
+});
+
+$("btnApply").addEventListener("click", apply);
+$("btnRefreshCols").addEventListener("click", async ()=>{
+  if(!ctx?.boardId) return;
+  await loadBoardColumns(ctx.boardId);
+  renderRows();
 });
 </script>
 </body>
