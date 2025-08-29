@@ -35,7 +35,8 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
 .preview{max-height:310px;overflow:auto}
 .row{display:grid;grid-template-columns:200px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
 .key{font-weight:700}
-.input{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text)}
+.input, select, .time-part{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text)}
+select{appearance:none}
 .kv-empty{color:var(--muted)}
 .kpi{display:flex;gap:10px;flex-wrap:wrap}
 .kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
@@ -43,6 +44,13 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
 hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
 .hint{font-size:12px;color:var(--muted);margin-top:6px}
 .hide{display:none!important}
+.inline{display:flex;gap:8px;align-items:center}
+.small{font-size:12px;color:var(--muted)}
+.switch{position:relative;width:44px;height:24px;border-radius:999px;background:rgba(255,255,255,.2);border:1px solid var(--border);cursor:pointer;display:inline-block;vertical-align:middle}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:999px;background:#fff;transition:left .15s ease}
+.switch.on{background:linear-gradient(135deg,var(--accent-2),var(--accent));border-color:transparent}
+.switch.on::after{left:24px}
+.time-part[disabled], select[disabled]{opacity:.6;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -57,7 +65,6 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
   <div class="panel">
     <div class="toolbar">
       <div class="actions">
-        <!-- Extract-from-attachment hidden as requested -->
         <button class="btn hide" id="extract">Extract from attachment</button>
         <button class="btn primary" id="apply" disabled>Apply to item</button>
       </div>
@@ -87,49 +94,72 @@ hr.sep{border:0;border-top:1px solid var(--border);margin:10px 0}
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
-  // ====== Column mapping (send ONLY these) ======
+  // ====== Mapped columns (only these are sent) ======
   const mapping={
     "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
     "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
     "Team_Est":{"type":"text","columnId":"text8"}
   };
 
-  // ====== Special rules ======
-  const IGNORED = new Set(["Name_Requester","Date_Request"]); // don’t show / don’t use
-  const SPECIAL_USED = new Set(["ENumber","Name_Client","Name_Project","Due_Date","Due_Time","Group"]); // used for title/date/status rules
+  // ====== Friendly labels & order ======
+  const FRIENDLY={
+    ENumber:"E Number",
+    Name_Client:"Client",
+    Name_Project:"Project",
+    Due_Date:"Due date",
+    Due_Time:"Due time",
+    Group:"Group / Discipline",
+    status06:"Status (status06)",
+    Value:"Value",
+    Team_Lead:"Team Lead",
+    Team_Est:"Team Estimate"
+  };
+  const ORDER=[
+    "ENumber","Name_Client","Name_Project",
+    "Due_Date","Due_Time","Group","status06",
+    "Value","Team_Lead","Team_Est"
+  ];
 
-  let ctx=null,itemId=null,boardId=null,rawFields={},editedFields={},updates=null,assetUrl=null,pendingName=null;
+  // ====== Ignore (do not show / do not use) ======
+  const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
+  const SPECIAL_USED = new Set(["ENumber","Name_Client","Name_Project","Due_Date","Due_Time","Group"]);
 
-  // ====== UI helpers ======
+  // ====== Status options (fixed, theme-safe) ======
+  const STATUS_OPTIONS=["","SPC","ENG","MAJ"]; // "" => (none)
+
+  // ====== Auto-map Group -> status06 label ======
+  function mapGroupToStatusLabel(v){
+    if(!v) return "";
+    const s=String(v).trim();
+    const setSPC=new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management"]);
+    if(setSPC.has(s)) return "SPC";
+    if(s==="Design") return "ENG";
+    if(/^Major/i.test(s)) return "MAJ";
+    return "";
+  }
+
+  // ====== Normalizers ======
   function setMsg(t){document.getElementById("msg").innerText=t||""}
   function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
   function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
   function normText(s){return (s||"").trim()}
   function normDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10)}
 
-  // Clamp to 24h HH:MM, minutes => 00 or 30 only
+  // Parse to HH:MM (24h); clamp minutes to 00/30
   function parseTimeToHHMM(s){
     if(!s) return null;
     const str=String(s).trim();
-
-    // Try flexible parser first (HH[:MM][am/pm])
     const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
     if(m){
       let hh=parseInt(m[1],10);
       let mm=m[2]?parseInt(m[2],10):0;
       const ap=m[3]?.toLowerCase?.();
-
       if(ap==="pm"&&hh<12) hh+=12;
       if(ap==="am"&&hh===12) hh=0;
-
       if(hh<0||hh>23) return null;
-      // clamp minutes to 00 / 30
       mm = mm>=30 ? 30 : 0;
-
       return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
     }
-
-    // Fallback: Date parser
     const d=new Date("1970-01-01T"+str);
     if(isNaN(d)) return null;
     let hh=d.getHours(), mm=d.getMinutes();
@@ -137,24 +167,21 @@ document.addEventListener("DOMContentLoaded", () => {
     return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
   }
 
-  // ====== DOCX unzip & XML parse with DOMParser ======
+  // ====== DOCX unzip & extract (SDT tags) ======
   async function parseDocxArrayBuffer(ab){
     const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
     const f=zip.file("word/document.xml");
     if(!f) throw new Error("word/document.xml not found (is this a valid .docx?)");
     return await withTimeout(f.async("string"),8000,"Reading document.xml");
   }
-
   function textFromNode(node){
-    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
-    let t="", curr; while((curr=walker.nextNode())) t += curr.nodeValue; return t;
+    const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT,null);
+    let t="",curr; while((curr=walker.nextNode())) t+=curr.nodeValue; return t;
   }
-
   function extractSdtWithDOM(documentXml){
-    const dom = new DOMParser().parseFromString(documentXml,"application/xml");
+    const dom=new DOMParser().parseFromString(documentXml,"application/xml");
     if(dom.getElementsByTagName("parsererror").length){throw new Error("XML parsererror in document.xml")}
-    const all = dom.getElementsByTagName("*");
-    const out = {};
+    const all=dom.getElementsByTagName("*"); const out={};
     for(let i=0;i<all.length;i++){
       const el=all[i]; if(el.localName!=="sdt") continue;
       let pr=null,content=null;
@@ -169,12 +196,12 @@ document.addEventListener("DOMContentLoaded", () => {
       for(let k=0;k<tags.length;k++){
         const t=tags[k];
         if(t.localName==="tag"||t.localName==="alias"){
-          tag = t.getAttribute("w:val") || t.getAttribute("val");
+          tag=t.getAttribute("w:val")||t.getAttribute("val");
           if(tag) break;
         }
       }
       if(!tag) continue;
-      const value = normText(textFromNode(content));
+      const value=normText(textFromNode(content));
       out[tag]=value;
     }
     return out;
@@ -186,65 +213,174 @@ document.addEventListener("DOMContentLoaded", () => {
     const parts=[a,b,c].filter(Boolean);
     return parts.length? parts.join(" ") : null;
   }
-  function mapGroupToStatusLabel(v){
-    if(!v) return null;
-    const s=String(v).trim();
-    const setSPC=new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management"]);
-    if(setSPC.has(s)) return "SPC";
-    if(s==="Design") return "ENG";
-    if(/^Major/i.test(s)) return "MAJ";
-    return null;
-  }
 
-  // Build the editable preview
-  function renderEditablePreview(fields){
+  // ====== State ======
+  let ctx=null,itemId=null,boardId=null;
+  let rawFields={}, editedFields={}, updates=null, pendingName=null;
+  let uiState={ timeEnabled:false, hour:"00", minute:"00", status:"", statusTouched:false };
+
+  // ====== UI: editable preview in your required order/labels ======
+  function renderEditablePreview(allFields){
     const el=document.getElementById("preview");
-    const keys = Object.keys(fields||{})
-      .filter(k => !IGNORED.has(k))   // hide requested fields
-      .sort();
+    // start from extracted but drop ignored
+    const filtered={};
+    Object.keys(allFields||{}).forEach(k=>{ if(!IGNORED.has(k)) filtered[k]=allFields[k]; });
 
-    if(!keys.length){el.classList.add("kv-empty");el.innerHTML="No fields extracted yet.";return}
+    if(Object.keys(filtered).length===0){
+      el.classList.add("kv-empty"); el.innerHTML="No fields extracted yet."; return;
+    }
     el.classList.remove("kv-empty");
 
-    // Keep a working copy users can edit
-    editedFields = {};
-    keys.forEach(k => editedFields[k] = fields[k]);
+    // seed editedFields
+    editedFields = {...filtered};
 
-    el.innerHTML = keys.map(k => `
-      <div class="row">
-        <div class="key">${k}</div>
-        <div><input class="input" data-key="${k}" value="${(fields[k]||"").replace(/"/g,'&quot;')}"></div>
-      </div>
-    `).join("");
+    // seed time + status UI state from fields
+    const hhmm=parseTimeToHHMM(filtered.Due_Time);
+    if(hhmm){
+      uiState.timeEnabled=true;
+      uiState.hour=hhmm.split(":")[0];
+      uiState.minute=hhmm.split(":")[1];
+    }else{
+      uiState.timeEnabled=false;
+      uiState.hour="00"; uiState.minute="00";
+    }
+    const autoStatus=mapGroupToStatusLabel(filtered.Group);
+    uiState.status = autoStatus || ""; // default from Group; user can change
+    uiState.statusTouched = false;
 
-    // Wire change handlers
+    // build rows in ORDER with special widgets
+    const rows = ORDER.map(key=>{
+      const label=FRIENDLY[key]||key;
+      if(key==="Due_Date"){
+        const val=(normDate(filtered.Due_Date)||"");
+        return rowTpl(label, `<input type="date" class="input" data-key="Due_Date" value="${val}">`);
+      }
+      if(key==="Due_Time"){
+        // time toggle + HH/MM selects
+        const onClass=uiState.timeEnabled?"on":"";
+        const disabled = uiState.timeEnabled? "" : "disabled";
+        const hourOpts = Array.from({length:24},(_,h)=>String(h).padStart(2,"0"))
+          .map(h=>`<option value="${h}" ${h===uiState.hour?"selected":""}>${h}</option>`).join("");
+        const minOpts = ["00","30"].map(m=>`<option value="${m}" ${m===uiState.minute?"selected":""}>${m}</option>`).join("");
+        return rowTpl(label, `
+          <div class="inline">
+            <span id="timeSwitch" class="switch ${onClass}" role="switch" aria-checked="${uiState.timeEnabled}" title="Toggle time"></span>
+            <div class="inline" style="flex:1">
+              <select id="hh" class="time-part" ${disabled}>${hourOpts}</select>
+              <span class="small">:</span>
+              <select id="mm" class="time-part" ${disabled}>${minOpts}</select>
+              <span class="small">24-hour, minutes 00/30</span>
+            </div>
+          </div>
+        `);
+      }
+      if(key==="status06"){
+        const opts = STATUS_OPTIONS.map(s=>{
+          const lbl = s==="" ? "(none)" : s;
+          const sel = (s===uiState.status) ? "selected" : "";
+          return `<option value="${s}" ${sel}>${lbl}</option>`;
+        }).join("");
+        return rowTpl(label, `<select id="statusSelect">${opts}</select>`);
+      }
+      // default text/number input fields
+      const current = (filtered[key]||"").replace(/"/g,'&quot;');
+      return rowTpl(label, `<input class="input" data-key="${key}" value="${current}">`);
+    }).join("");
+
+    el.innerHTML = rows;
+
+    // wire generic text inputs
     el.querySelectorAll("input.input").forEach(inp=>{
       inp.addEventListener("input", e=>{
-        const key = e.target.getAttribute("data-key");
-        editedFields[key] = e.target.value;
+        const k=e.target.getAttribute("data-key");
+        editedFields[k]=e.target.value;
+        // Live auto-map status when Group changes (unless user already touched status)
+        if(k==="Group" && !uiState.statusTouched){
+          const auto=mapGroupToStatusLabel(e.target.value);
+          uiState.status = auto || "";
+          const sel=document.getElementById("statusSelect");
+          if(sel){ sel.value = uiState.status; }
+        }
       });
     });
+
+    // wire date
+    const dateInp=el.querySelector('input[data-key="Due_Date"]');
+    if(dateInp){
+      dateInp.addEventListener("change", e=>{
+        editedFields.Due_Date=e.target.value;
+      });
+    }
+
+    // wire time switch + selects
+    const sw=document.getElementById("timeSwitch");
+    const hhSel=document.getElementById("hh");
+    const mmSel=document.getElementById("mm");
+    function setTimeEnabled(on){
+      uiState.timeEnabled=on;
+      sw.classList.toggle("on", on);
+      sw.setAttribute("aria-checked", String(on));
+      hhSel.disabled = !on; mmSel.disabled=!on;
+      if(!on){ editedFields.Due_Time=""; }  // clear time
+      else{
+        // write current HH:MM back
+        editedFields.Due_Time = uiState.hour+":"+uiState.minute;
+      }
+    }
+    sw.addEventListener("click", ()=> setTimeEnabled(!uiState.timeEnabled));
+    hhSel.addEventListener("change", e=>{
+      uiState.hour=e.target.value;
+      if(uiState.timeEnabled) editedFields.Due_Time=uiState.hour+":"+uiState.minute;
+    });
+    mmSel.addEventListener("change", e=>{
+      uiState.minute=e.target.value;
+      if(uiState.timeEnabled) editedFields.Due_Time=uiState.hour+":"+uiState.minute;
+    });
+
+    // wire status select
+    const statusSel=document.getElementById("statusSelect");
+    if(statusSel){
+      statusSel.addEventListener("change", e=>{
+        uiState.statusTouched = true;
+        uiState.status = e.target.value; // "" or label
+      });
+    }
   }
 
+  function rowTpl(label, controlHtml){
+    return `<div class="row">
+      <div class="key">${label}</div>
+      <div>${controlHtml}</div>
+    </div>`;
+  }
+
+  // ====== Build updates payload from edited + UI state ======
   async function buildUpdatesFromEdited(fields){
     const vals={};
 
-    // Title from edited fields
+    // Title
     pendingName = buildTitle(fields) || null;
 
-    // date6: always date; time if present (24h HH:MM, minutes 00/30)
+    // date6 with optional time
     const dateIso = normDate(normText(fields.Due_Date));
-    const hhmm   = parseTimeToHHMM(normText(fields.Due_Time));
-    if(dateIso){ vals["date6"] = hhmm ? {"date":dateIso,"time":hhmm} : {"date":dateIso}; }
+    let hhmm = null;
+    if(uiState.timeEnabled){
+      // ensure HH:MM and 00/30 minutes
+      const clamped = (uiState.hour||"00")+":"+(uiState.minute||"00");
+      hhmm = parseTimeToHHMM(clamped);
+    }
+    if(dateIso){
+      vals["date6"] = hhmm ? {"date":dateIso,"time":hhmm} : {"date":dateIso};
+    }
 
-    // status06 from Group mapping
-    const mappedStatus=mapGroupToStatusLabel(fields.Group);
-    if(mappedStatus){ vals["status06"]={"label":mappedStatus}; }
+    // status06 from dropdown (or auto if empty)
+    const chosen = uiState.status || mapGroupToStatusLabel(fields.Group);
+    if(chosen){ vals["status06"]={label:chosen}; }
 
-    // Regular mapped columns
+    // mapped columns
     for(const k in mapping){
       const m=mapping[k];
-      const v=fields[k]; // use edited value
+      const v=fields[k];
       if(v==null || v==="") continue;
       if(m.type==="text"){ vals[m.columnId]=v; }
       else if(m.type==="numbers"){
@@ -255,9 +391,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return vals;
   }
 
-  // Apply with robust GraphQL (IDs as ID!, column_values as JSON variable)
+  // ====== Apply to monday (IDs as ID!, pass JSON as var) ======
   async function applyToMonday(vals){
-    // 1) Column updates via variables (prevents escaping issues)
     const m=`mutation($b:ID!,$i:ID!,$v:JSON!){
       change_multiple_column_values(board_id:$b,item_id:$i,column_values:$v){ id }
     }`;
@@ -267,7 +402,6 @@ document.addEventListener("DOMContentLoaded", () => {
       throw new Error("column_values: " + msg);
     }
 
-    // 2) Name update (if any). Try simple column, fall back to change_item_name.
     if(pendingName){
       try{
         const m2=`mutation($i:ID!,$val:String!){
@@ -286,7 +420,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ====== Monday context/theme ======
-  monday.listen("context",(res)=>{ctx=res.data||{};itemId=ctx.itemId;boardId=ctx.boardId;document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
+  monday.listen("context",(res)=>{const c=res.data||{};ctx=c;itemId=c.itemId;boardId=c.boardId;document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
   monday.listen("theme",(res)=>{const theme=res.data?.theme||"auto";document.getElementById("theme-pill").innerText=`Theme: ${theme}`});
 
   // ====== UI bindings ======
@@ -306,33 +440,22 @@ document.addEventListener("DOMContentLoaded", () => {
     handleLocalFile(f);
   });
 
-  // (extract button intentionally hidden)
-
   document.getElementById("apply").onclick=async()=>{
     try{
       if(!editedFields || Object.keys(editedFields).length===0){ setMsg("Nothing to apply"); return }
       setMsg("Building updates…");
-      // Merge: start from edited view but still suppress ignored keys
-      const working = {};
-      Object.keys(editedFields).forEach(k=>{
-        if(!IGNORED.has(k)) working[k] = editedFields[k];
-      });
-
+      // strip ignored
+      const working={};
+      Object.keys(editedFields).forEach(k=>{ if(!IGNORED.has(k)) working[k]=editedFields[k]; });
       updates = await buildUpdatesFromEdited(working);
-
-      if(Object.keys(updates).length===0 && !buildTitle(working)){
-        setMsg("Nothing mappable found"); return;
-      }
-
+      if(Object.keys(updates).length===0 && !buildTitle(working)){ setMsg("Nothing mappable found"); return; }
       setMsg("Updating item…");
       await applyToMonday(updates);
       setMsg("Done");
-    }catch(e){
-      showErr(e, "Update failed");
-    }
+    }catch(e){ showErr(e,"Update failed"); }
   };
 
-  // ====== Flows ======
+  // ====== Flow: local file ======
   async function handleLocalFile(file){
     try{
       setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
@@ -340,24 +463,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const xml=await parseDocxArrayBuffer(ab);
       setMsg("Parsing fields…");
       rawFields = extractSdtWithDOM(xml);
-
-      // Build filtered view for editing
-      const filtered = {};
-      Object.keys(rawFields).forEach(k=>{
-        if(!IGNORED.has(k)) filtered[k] = rawFields[k];
-      });
-
-      renderEditablePreview(filtered);
-
-      // Enable Apply if we have anything or a computed title/date/status is possible
-      const hasAny = Object.keys(filtered).length>0;
+      renderEditablePreview(rawFields);
+      const hasAny = Object.keys(rawFields).some(k=>!IGNORED.has(k));
       document.getElementById("apply").disabled = !hasAny;
       setMsg(hasAny? "Ready to apply" : "Nothing mappable found");
-    }catch(e){ showErr(e,"Could not read .docx") }
+    }catch(e){ showErr(e,"Could not read .docx"); }
   }
 
-  // Surface unexpected global errors
-  window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
+  // global errors
+  window.addEventListener("error",(e)=> showErr(e.error||e.message,"Script error"));
 });
 </script>
 </body>
