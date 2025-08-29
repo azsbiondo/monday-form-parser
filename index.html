@@ -4,40 +4,81 @@
   <meta charset="utf-8" />
   <title>Update status06 & date6</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Official SDK (do NOT self-host; avoids CORS) -->
+  <!-- Monday SDK (use CDN, do not self-host) -->
   <script src="https://unpkg.com/monday-sdk-js/dist/main.js"></script>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
-    label{display:inline-block;margin:6px 0}
-    input,select{padding:8px;border-radius:8px;border:1px solid #ccc}
-    button{padding:10px 14px;border:0;border-radius:8px;background:#1f7a54;color:#fff;cursor:pointer}
-    pre{background:#f6f6f6;padding:10px;border-radius:8px;overflow:auto}
+    :root { --gap: 12px; }
+    * { box-sizing: border-box; }
+    body{font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; padding: 16px;}
+    h2{margin: 0 0 6px;}
     .muted{color:#555}
+    .row{display:flex; gap:var(--gap); align-items:center; flex-wrap:wrap; margin: 8px 0;}
+    label{display:flex; flex-direction:column; font-size:12px; color:#333; gap:6px;}
+    input[type="date"], input[type="text"], select {
+      padding:8px; border:1px solid #ccc; border-radius:8px; min-width: 180px;
+    }
+    .time-wrap{display:flex; gap:8px; align-items:center;}
+    .time-wrap select { min-width: 100px; }
+    button{padding:10px 14px; border:0; border-radius:8px; background:#1f7a54; color:#fff; cursor:pointer}
+    button:disabled{opacity:.6; cursor:not-allowed}
+    pre{background:#f6f6f6; padding:10px; border-radius:8px; overflow:auto; margin:6px 0 0}
+    details{margin-top:8px}
     .ok{color:#117a37}
     .warn{color:#b54708}
+    .grid{display:grid; grid-template-columns: 1fr; gap: var(--gap)}
+    @media (min-width:720px){ .grid{ grid-template-columns: 1fr 1fr } }
+    .pill{display:inline-block; padding:2px 8px; background:#eee; border-radius:999px; font-size:12px}
   </style>
 </head>
 <body>
   <h2>Update this item</h2>
-  <div class="muted">Columns: <b>status06</b> (Status), <b>date6</b> (Date)</div>
+  <div class="muted">Columns: <span class="pill">status06</span> (Status), <span class="pill">date6</span> (Date)</div>
 
-  <div style="margin-top:10px">
-    <label>Status label (status06): <input id="statusLabel" placeholder="e.g. Done / In Progress / TBD" /></label>
+  <div class="grid" style="margin-top:12px">
+    <label>
+      Status label (status06)
+      <input id="statusLabel" type="text" placeholder="e.g. Done / In Progress / TBD" />
+    </label>
+
+    <div class="row" style="align-items:flex-end">
+      <label>
+        Date (date6)
+        <input id="dateOnly" type="date" />
+      </label>
+
+      <div class="time-wrap">
+        <label>
+          Hour (24h)
+          <select id="hour">
+            <option value="">—</option>
+          </select>
+        </label>
+
+        <label>
+          Minute
+          <select id="minute">
+            <option value="">—</option>
+            <option value="00">00</option>
+            <option value="30">30</option>
+          </select>
+        </label>
+      </div>
+    </div>
   </div>
-  <div>
-    <label>Date (date6): <input id="dateOnly" type="date" /></label>
-    <label style="margin-left:10px">Time (optional): <input id="timeHHMM" type="time" step="1" placeholder="HH:MM or HH:MM:SS" /></label>
-  </div>
-  <div style="margin-top:10px">
+
+  <div class="row">
     <button id="btn">Apply</button>
+    <span id="hint" class="muted"></span>
   </div>
 
-  <div id="out" style="margin-top:16px"></div>
+  <div id="out" style="margin-top:12px"></div>
 
 <script>
+/** ---------- SDK / helpers ---------- **/
 const monday = window.mondaySdk();
+const $ = (id)=>document.getElementById(id);
 const out = (html, cls="")=>{
-  const d=document.getElementById("out"), x=document.createElement("div");
+  const d=$("out"), x=document.createElement("div");
   x.className=cls; x.innerHTML=html; d.appendChild(x);
 };
 const j = (o)=>JSON.stringify(o,null,2);
@@ -46,7 +87,20 @@ let context=null;
 monday.listen("context", ({data})=>{
   context=data;
   out(`<b>[Context]</b> ${j({boardId:data.boardId, itemId:data.itemId})}`,"muted");
+  $("hint").textContent = "Ready";
 });
+
+function fillHourOptions(){
+  const hour = $("hour");
+  // Add 00..23
+  for(let h=0; h<=23; h++){
+    const v = String(h).padStart(2,"0");
+    const opt = document.createElement("option");
+    opt.value = v; opt.textContent = v;
+    hour.appendChild(opt);
+  }
+}
+fillHourOptions();
 
 async function getBoardColumns(boardId){
   const q=`
@@ -64,25 +118,41 @@ async function getBoardColumns(boardId){
 function parseStatusLabels(settings_str){
   try{
     const s=JSON.parse(settings_str||"{}");
+    // labels may come under "labels" (map of index->string) or "labels_positions"
     const raw = s.labels || s.labels_positions || {};
-    return Object.values(raw).filter(Boolean); // array of label strings
+    return Object.values(raw).filter(Boolean).map(x=>String(x));
   }catch{ return []; }
 }
 
-function dateValueForColumn(settings_str, dateISO, timeRaw){
-  // If the Date column does NOT have time enabled, you MUST NOT send time.
-  let timeEnabled=false;
+function isDateTimeEnabled(settings_str){
   try{
     const s=JSON.parse(settings_str||"{}");
-    timeEnabled = Boolean(s.time || s.enable_time || s.allow_time);
-  }catch{}
+    // Monday may use any of these flags
+    return Boolean(s.time || s.enable_time || s.allow_time);
+  }catch{ return false; }
+}
+
+/**
+ * Build the value for the date column.
+ * - dateISO is required to include date
+ * - time is included only if column has time enabled AND user selected an hour
+ * - seconds are always "00"
+ */
+function buildDateValue(settings_str, dateISO, hourStr, minuteStr){
   if(!dateISO) return null;
-  if(!timeEnabled) return { date: dateISO };           // safest
-  if(!timeRaw)   return { date: dateISO, time: "00:00:00" };
-  // normalize time to HH:mm:ss
-  const p = timeRaw.split(":");
-  const hh = p[0]||"00", mm=p[1]||"00", ss=(p[2]!==undefined)?p[2]:"00";
-  return { date: dateISO, time: `${hh}:${mm}:${ss}` };
+  const dtEnabled = isDateTimeEnabled(settings_str);
+
+  if(!dtEnabled) return { date: dateISO }; // never include time if disabled
+
+  // If hour is provided, minute defaults to "00" if empty.
+  if(hourStr){
+    const hh = hourStr.padStart(2,"0");
+    const mm = (minuteStr || "00").padStart(2,"0"); // only "00" or "30" from the UI
+    const ss = "00"; // per requirement
+    return { date: dateISO, time: `${hh}:${mm}:${ss}` };
+  }
+  // No hour -> send only date
+  return { date: dateISO };
 }
 
 async function changeValues(boardId,itemId,valsObj){
@@ -90,52 +160,67 @@ async function changeValues(boardId,itemId,valsObj){
     mutation($bid:ID!, $iid:ID!, $vals:JSON!){
       change_multiple_column_values(board_id:$bid, item_id:$iid, column_values:$vals){ id }
     }`;
-  const v = { bid:String(boardId), iid:String(itemId), vals: JSON.stringify(valsObj) };
+  const variables = { bid:String(boardId), iid:String(itemId), vals: JSON.stringify(valsObj) };
   out(`<details><summary>Sending column_values</summary><pre>${j(valsObj)}</pre></details>`,"muted");
-  const r = await monday.api(m,{variables:v});
+  const r = await monday.api(m,{variables});
   if(r.errors) throw new Error(r.errors[0].message);
   return r.data.change_multiple_column_values?.id || "ok";
 }
 
-document.getElementById("btn").addEventListener("click", async ()=>{
-  document.getElementById("out").innerHTML="";
+/** ---------- Click handler ---------- **/
+$("btn").addEventListener("click", async ()=>{
+  $("out").innerHTML = "";
+  $("hint").textContent = "Working…";
+  $("btn").disabled = true;
+
   try{
     if(!context?.boardId||!context?.itemId) throw new Error("Open this page inside a Monday item view.");
-    const boardId=context.boardId, itemId=context.itemId;
 
+    const boardId=context.boardId, itemId=context.itemId;
     const cols = await getBoardColumns(boardId);
+
     const statusCol = cols.find(c=>c.id==="status06");
     const dateCol   = cols.find(c=>c.id==="date6");
     if(!dateCol) throw new Error('Column "date6" not found.');
-    if(!statusCol) out(`<div class="warn">Column "status06" not found (status update will be skipped).</div>`,"warn");
 
     out(`<b>Columns found</b> ${j({
       status06: statusCol?{id:statusCol.id,title:statusCol.title,type:statusCol.type}:null,
-      date6: {id:dateCol.id,title:dateCol.title,type:dateCol.type}
+      date6: {id:dateCol.id,title:dateCol.title,type:dateCol.type, timeEnabled:isDateTimeEnabled(dateCol.settings_str)}
     })}`,"muted");
 
-    // Build payload
     const vals = {};
-    const inputLabel = (document.getElementById("statusLabel").value||"").trim();
+
+    // Status (optional)
+    const inputLabel = ($("statusLabel").value||"").trim();
     if(statusCol && inputLabel){
-      const allowed = parseStatusLabels(statusCol.settings_str);
-      out(`<details><summary>status06 labels</summary><pre>${j(allowed)}</pre></details>`,"muted");
-      const match = allowed.find(l => String(l).toLowerCase()===inputLabel.toLowerCase());
-      if(match) vals["status06"] = { label: match };
-      else out(`<div class="warn">Label "${inputLabel}" not found on status06. Skipping status.</div>`,"warn");
+      const allowed = parseStatusLabels(statusCol.settings_str).map(x=>x.toLowerCase());
+      if(allowed.includes(inputLabel.toLowerCase())){
+        vals["status06"] = { label: inputLabel };
+      }else{
+        out(`<div class="warn">Label "<b>${inputLabel}</b>" not found on status06. Skipping status update.</div>`,"warn");
+      }
     }
 
-    const dateISO = (document.getElementById("dateOnly").value||"").trim();     // YYYY-MM-DD
-    const timeRaw = (document.getElementById("timeHHMM").value||"").trim();     // HH:MM[:SS]
-    const dateVal = dateValueForColumn(dateCol.settings_str, dateISO, timeRaw);
+    // Date (+ optional time)
+    const dateISO = ($("dateOnly").value||"").trim(); // YYYY-MM-DD
+    const hourStr = ($("hour").value||"").trim();     // "00".."23" or ""
+    const minuteStr = ($("minute").value||"").trim(); // "" or "00" or "30"
+    const dateVal = buildDateValue(dateCol.settings_str, dateISO, hourStr, minuteStr);
     if(dateVal) vals["date6"]=dateVal;
 
-    // Send
+    // Nothing to send?
+    if(Object.keys(vals).length===0){
+      out(`<div class="warn">Nothing to update — provide a Status and/or Date.</div>`,"warn");
+      return;
+    }
+
     await changeValues(boardId,itemId,vals);
     out(`<b class="ok">✅ Update succeeded.</b>`,"ok");
-
   }catch(e){
     out(`<b class="warn">❌ Update failed:</b> ${e?.message||e}`,"warn");
+  }finally{
+    $("btn").disabled = false;
+    $("hint").textContent = "";
   }
 });
 </script>
