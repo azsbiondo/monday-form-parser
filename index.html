@@ -8,13 +8,33 @@
 <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
-:root{--bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;--accent:#3d6317;--accent-2:#24468E;--border:rgba(255,255,255,.12);--shadow:0 10px 25px rgba(0,0,0,.35)}
-@media (prefers-color-scheme: light){:root{--bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;--accent:#3d6317;--accent-2:#24468E;--border:rgba(10,12,16,.08);--shadow:0 10px 25px rgba(10,12,16,.08)}}
+:root{
+  --bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;
+  --accent:#3d6317;--accent-2:#24468E;--border:rgba(255,255,255,.12);
+  --shadow:0 10px 25px rgba(0,0,0,.35);
+  --field-bg:rgba(255,255,255,.05); --field-text:var(--text);
+  --select-bg:#11141a; --select-text:#eaeef6; --option-bg:#11141a; --option-text:#eaeef6;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;
+    --accent:#3d6317;--accent-2:#24468E;--border:rgba(10,12,16,.08);
+    --shadow:0 10px 25px rgba(10,12,16,.08);
+    --field-bg:#fff; --field-text:#0b0c0f;
+    --select-bg:#ffffff; --select-text:#0b0c0f; --option-bg:#ffffff; --option-text:#0b0c0f;
+  }
+}
 html,body{height:100%}
-body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:
-  radial-gradient(1200px 600px at 20% -10%,rgba(36,70,142,.25),transparent 60%),
-  radial-gradient(900px 450px at 120% 20%,rgba(61,99,23,.20),transparent 60%),var(--bg);color:var(--text)}
-.container{max-width:860px;margin:24px auto;padding:0 14px} /* narrower to avoid horiz scroll */
+body{
+  margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+  background:
+    radial-gradient(1200px 600px at 20% -10%,rgba(36,70,142,.25),transparent 60%),
+    radial-gradient(900px 450px at 120% 20%,rgba(61,99,23,.20),transparent 60%),
+    var(--bg);
+  color:var(--text)
+}
+/* slightly narrower so Monday doesn’t show horizontal scroll */
+.container{max-width:860px;margin:24px auto;padding:0 12px}
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .title{font-size:20px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
 .badge{font-size:12px;padding:4px 8px;border-radius:999px;background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff}
@@ -33,17 +53,27 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
 .drop{display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;transition:border-color .2s ease,background .2s ease}
 .drop.k{border-color:var(--accent-2);background:rgba(36,70,142,.06)}
 .preview{max-height:310px;overflow:auto}
-.row{display:grid;grid-template-columns:200px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
+.row{display:grid;grid-template-columns:210px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
 .key{font-weight:700}
-.input,.select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text)}
-.input::placeholder{color:var(--muted)}
+.input, select, .timewrap select, .timewrap input[type="checkbox"]{
+  width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);
+  background:var(--field-bg);color:var(--field-text)
+}
+/* force high-contrast selects/options in both themes */
+select, .timewrap select{
+  background:var(--select-bg)!important;color:var(--select-text)!important;
+}
+select option, .timewrap select option{
+  background:var(--option-bg)!important;color:var(--option-text)!important;
+}
 .kv-empty{color:var(--muted)}
 .kpi{display:flex;gap:10px;flex-wrap:wrap}
 .kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
 .hide{display:none!important}
-.switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
-/* readable dropdown text in both themes */
-select.select, option { color: var(--text); background: var(--card); }
+.timewrap{display:flex;gap:8px;align-items:center}
+.toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.toggle input{width:auto}
 </style>
 </head>
 <body>
@@ -58,6 +88,7 @@ select.select, option { color: var(--text); background: var(--card); }
   <div class="panel">
     <div class="toolbar">
       <div class="actions">
+        <button class="btn hide" id="extract">Extract from attachment</button>
         <button class="btn primary" id="apply" disabled>Apply to item</button>
       </div>
       <div class="actions">
@@ -85,49 +116,78 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ====== Column mapping (send ONLY these) ======
   const mapping = {
-    "Value":             { type: "numbers", columnId: "numeric_mkq0534" },
-    "Assigned_Lead":     { type: "text",    columnId: "executive___ops_2" }, // Team Lead -> Assigned Lead
-    "PM_Lead":           { type: "text",    columnId: "text0" },             // new field (blank by default)
-    "Estimating_Lead":   { type: "text",    columnId: "text8" }              // Team_Est -> Estimating Lead
+    "Value":      { type:"numbers", columnId:"numeric_mkq0534" },
+    "Team_Lead":  { type:"text",    columnId:"executive___ops_2" }, // Assigned Lead
+    "Team_Est":   { type:"text",    columnId:"text8" },             // Estimating Lead
+    "PM_Lead":    { type:"text",    columnId:"text0" }              // New PM Lead (blank by default)
   };
 
-  // Hide these from preview / not used
+  // ====== Special rules / sets ======
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
-  // Used in title/date/status rules
-  const SPECIAL_USED = new Set(["ENumber","Name_Client","Name_Project","Due_Date","Due_Time","Group"]);
+  const allowedGroupLabels = ["SPC","ENG","MAJ"]; // fixed Monday status labels
+  // map many docx group/discipline values to those three:
+  function mapGroupToStatusLabel(v){
+    if(!v) return null;
+    const s = String(v).trim();
 
+    // already a valid label?
+    if (allowedGroupLabels.includes(s)) return s;
+
+    // buckets → SPC
+    const spcSet = new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management","Instrumentation","Piping","Civil","Structural"]);
+    if (spcSet.has(s)) return "SPC";
+
+    // buckets → ENG
+    if (/^Design$/i.test(s) || /^Engineering$/i.test(s) || /^ENG$/i.test(s)) return "ENG";
+
+    // buckets → MAJ
+    if (/^Major/i.test(s) || /^MAJ$/i.test(s)) return "MAJ";
+
+    return null; // unknown -> user picks in UI
+  }
+
+  // ====== State ======
   let ctx=null, itemId=null, boardId=null;
-  let rawFields = {}, editedFields = {}, updates = null, pendingName = null;
+  let rawFields={}, editedFields={}, updates=null, pendingName=null;
 
-  const setMsg = (t)=> document.getElementById("msg").innerText = t || "";
-  const showErr = (e,label)=>{
-    const msg=(e&&e.message)?e.message:String(e||"Unknown error");
-    setMsg(label+": "+msg);
-    console.error(label, e);
-  };
-  const withTimeout=(promise,ms,label)=>{
-    let t; const timeout = new Promise((_,rej)=>{ t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms);});
-    return Promise.race([promise,timeout]).finally(()=>clearTimeout(t));
-  };
-  const normText=(s)=> (s||"").trim();
-  const normDate=(s)=>{ if(!s) return null; const d=new Date(s); return isNaN(d)?null:d.toISOString().slice(0,10); };
+  // ====== UI helpers ======
+  function setMsg(t){document.getElementById("msg").innerText=t||""}
+  function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
+  function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
+  function normText(s){return (s||"").trim()}
+  function normDateToYMD(s){
+    if(!s) return "";
+    // try ISO first
+    const d1 = new Date(s);
+    if(!isNaN(d1)) return d1.toISOString().slice(0,10);
+    // try mm/dd/yy or mm/dd/yyyy
+    const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if(m){
+      const mm = m[1].padStart(2,"0");
+      const dd = m[2].padStart(2,"0");
+      let yyyy = m[3];
+      if(yyyy.length===2){ yyyy = (Number(yyyy) < 70 ? "20"+yyyy : "19"+yyyy); }
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return "";
+  }
   function parseTimeToHHMM(s){
     if(!s) return null;
-    const str=String(s).trim();
-    const m=str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
+    const str = String(s).trim();
+    const m = str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
     if(!m){
       const d=new Date("1970-01-01T"+str);
       if(!isNaN(d)) return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
       return null;
     }
-    let hh=parseInt(m[1],10), mm=m[2]?parseInt(m[2],10):0, ap=m[3]?.toLowerCase?.();
+    let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();
     if(ap==="pm"&&hh<12) hh+=12;
     if(ap==="am"&&hh===12) hh=0;
     if(hh<0||hh>23||mm<0||mm>59) return null;
     return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
   }
 
-  // ====== DOCX unzip & XML parse ======
+  // ====== DOCX unzip & extract ======
   async function parseDocxArrayBuffer(ab){
     const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
     const f=zip.file("word/document.xml");
@@ -168,178 +228,180 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  // ====== Business rules ======
+  // ====== Title build ======
   function buildTitle(fields){
     const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
     const parts=[a,b,c].filter(Boolean);
     return parts.length? parts.join(" ") : null;
   }
-  // Group -> status06 label
-  function mapGroupToStatusLabel(v){
-    if(!v) return null;
-    const s=String(v).trim();
-    const setSPC=new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management"]);
-    if(setSPC.has(s)) return "SPC";
-    if(s==="Design") return "ENG";
-    if(/^Major/i.test(s)) return "MAJ";
-    return null;
-  }
 
-  // ====== Friendly field layout & controls ======
-  const FRIENDLY_ORDER = [
-    { key:"ENumber",        label:"E Number",           type:"text" },
-    { key:"Name_Client",    label:"Client Name",        type:"text" },
-    { key:"Name_Project",   label:"Project Name",       type:"text" },
-    { key:"Group",          label:"Group",              type:"group" }, // maps to status06
-    { key:"Due_Date",       label:"Due Date",           type:"date" },
-    { key:"Due_Time",       label:"Due Time",           type:"time" },  // has toggle
-    { key:"Value",          label:"Value",              type:"text" },
-    { key:"Assigned_Lead",  label:"Assigned Lead",      type:"text" },
-    { key:"PM_Lead",        label:"PM Lead",            type:"text" },
-    { key:"Estimating_Lead",label:"Estimating Lead",    type:"text" }
-  ];
-
-  const GROUP_OPTIONS = [
-    "CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management","Design","Major Project"
-  ];
-
+  // ====== Preview (friendly labels, fixed order, pickers, proper dropdowns) ======
   function renderEditablePreview(fields){
     const el=document.getElementById("preview");
+    const friendlyOrder = [
+      ["ENumber","E Number"],
+      ["Name_Client","Client"],
+      ["Name_Project","Project"],
+      // Group (status06) dropdown with fixed labels:
+      ["__GroupStatus","Group"],
+      // date & time
+      ["Due_Date","Due Date"],
+      ["Due_Time","Due Time"],
+      // Leads
+      ["Team_Lead","Assigned Lead"],
+      ["PM_Lead","PM Lead"],             // new blank field
+      ["Team_Est","Estimating Lead"],
+      // Value
+      ["Value","Value"]
+    ];
 
-    // working copy (ensure PM_Lead present)
+    // working copy (start from original, then add computed slots)
     editedFields = {};
-    FRIENDLY_ORDER.forEach(def=>{
-      if(IGNORED.has(def.key)) return;
-      if(def.key==="PM_Lead" && fields[def.key]==null) editedFields[def.key] = "";
-      else editedFields[def.key] = fields[def.key] ?? "";
+    Object.keys(fields||{}).forEach(k=>{
+      if(!IGNORED.has(k)) editedFields[k]=fields[k];
     });
 
-    const rows = FRIENDLY_ORDER
-      .filter(def => !IGNORED.has(def.key))
-      .map(def=>{
-        const rawVal = editedFields[def.key] ?? "";
-        if(def.type==="group"){
-          const opts = GROUP_OPTIONS.map(g => `<option value="${g}" ${String(rawVal)===g?'selected':''}>${g}</option>`).join("");
-          return `
-            <div class="row">
-              <div class="key">${def.label}</div>
-              <div>
-                <select class="select" data-key="${def.key}">
-                  <option value="">— Select —</option>
-                  ${opts}
-                </select>
-              </div>
-            </div>
-          `;
-        }
-        if(def.type==="date"){
-          // FIX: normalize anything like 8/28/25 to yyyy-MM-dd for the date input
-          const iso = normDate(rawVal) || "";
-          return `
-            <div class="row">
-              <div class="key">${def.label}</div>
-              <div><input class="input" type="date" data-key="${def.key}" value="${iso}"></div>
-            </div>
-          `;
-        }
-        if(def.type==="time"){
-          const hhmm = parseTimeToHHMM(rawVal);
-          const hasTime = !!hhmm;
-          const [hSel,mSel] = hasTime ? hhmm.split(":") : ["",""];
-          const hours = Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
-          const hourOpts = [`<option value=""></option>`].concat(hours.map(h=>`<option value="${h}" ${h===hSel?'selected':''}>${h}</option>`)).join("");
-          const minOpts  = [`<option value=""></option>`,`<option value="00" ${mSel==="00"?'selected':''}>00</option>`,`<option value="30" ${mSel==="30"?'selected':''}>30</option>`].join("");
-          return `
-            <div class="row">
-              <div class="key">${def.label}</div>
-              <div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <label class="switch">
-                    <input type="checkbox" id="time-toggle" ${hasTime?'checked':''}>
-                    <span>Set time</span>
-                  </label>
-                  <select class="select" id="time-hour" ${hasTime?'':'disabled'}>${hourOpts}</select>
-                  <span>:</span>
-                  <select class="select" id="time-min" ${hasTime?'':'disabled'}>${minOpts}</select>
-                </div>
-              </div>
-            </div>
-          `;
-        }
-        // text
+    // compute normalized date/time for the inputs
+    const dateYMD = normDateToYMD(editedFields.Due_Date);
+    const timeHM  = parseTimeToHHMM(editedFields.Due_Time);
+    const timeOn  = !!timeHM;
+
+    // compute default mapped status from Group text
+    const initialGroup = mapGroupToStatusLabel(editedFields.Group) || "";
+    editedFields.__GroupStatus = initialGroup;
+
+    // ensure PM_Lead slot exists (blank initially)
+    if (!("PM_Lead" in editedFields)) editedFields.PM_Lead = "";
+
+    // render
+    const hourOpts = Array.from({length:24},(_,h)=>`<option value="${String(h).padStart(2,"0")}">${String(h).padStart(2,"0")}</option>`).join("");
+    const minuteOpts = ["00","30"].map(m=>`<option value="${m}">${m}</option>`).join("");
+
+    const rowsHtml = friendlyOrder.map(([key,label])=>{
+      if(key==="Due_Date"){
         return `
           <div class="row">
-            <div class="key">${def.label}</div>
-            <div><input class="input" data-key="${def.key}" value="${String(rawVal).replace(/"/g,'&quot;')}"></div>
+            <div class="key">${label}</div>
+            <div>
+              <input class="input" id="input-date" type="date" value="${dateYMD || ""}">
+            </div>
           </div>
         `;
-      }).join("");
+      }
+      if(key==="Due_Time"){
+        const hh = timeHM ? timeHM.split(":")[0] : "12";
+        const mm = timeHM ? timeHM.split(":")[1].padStart(2,"0") : "00";
+        return `
+          <div class="row">
+            <div class="key">${label}</div>
+            <div class="timewrap">
+              <label class="toggle"><input type="checkbox" id="toggle-time" ${timeOn?"checked":""}> Include time</label>
+              <select id="time-hour" ${timeOn?"":"disabled"}>${hourOpts}</select>
+              <select id="time-minute" ${timeOn?"":"disabled"}>${minuteOpts}</select>
+            </div>
+          </div>
+          <script>
+            (function(){
+              const th=document.getElementById('time-hour');
+              const tm=document.getElementById('time-minute');
+              if(th) th.value='${hh}';
+              if(tm) tm.value='${mm}';
+            })();
+          </script>
+        `;
+      }
+      if(key==="__GroupStatus"){
+        const opts = ['<option value=""></option>']
+          .concat(allowedGroupLabels.map(l=>`<option value="${l}">${l}</option>`)).join("");
+        return `
+          <div class="row">
+            <div class="key">${label}</div>
+            <div><select id="group-status">${opts}</select></div>
+          </div>
+          <script>(function(){var gs=document.getElementById('group-status'); if(gs) gs.value='${initialGroup}';})();</script>
+        `;
+      }
+      // default text/number inputs
+      const val = (editedFields[key]??"").toString().replace(/"/g,'&quot;');
+      return `
+        <div class="row">
+          <div class="key">${label}</div>
+          <div><input class="input" data-key="${key}" value="${val}"></div>
+        </div>
+      `;
+    }).join("");
 
-    if(!rows){
-      el.classList.add("kv-empty");
-      el.innerHTML="No fields extracted yet.";
-      return;
-    }
-    el.classList.remove("kv-empty");
-    el.innerHTML = rows;
+    el.innerHTML = rowsHtml || "No fields extracted yet.";
+    el.classList.toggle("kv-empty", !rowsHtml);
 
-    // wire text inputs
+    // wiring: generic text inputs
     el.querySelectorAll("input.input").forEach(inp=>{
       inp.addEventListener("input", e=>{
         const key = e.target.getAttribute("data-key");
         editedFields[key] = e.target.value;
       });
     });
-    // wire selects (group + time pickers below)
-    el.querySelectorAll("select.select[data-key]").forEach(sel=>{
-      sel.addEventListener("change", e=>{
-        const key = e.target.getAttribute("data-key");
-        editedFields[key] = e.target.value;
-      });
-    });
 
-    // time controls
-    const toggle = el.querySelector("#time-toggle");
-    const sh = el.querySelector("#time-hour");
-    const sm = el.querySelector("#time-min");
-    if(toggle && sh && sm){
-      const updateFromPickers = ()=>{
-        if(!toggle.checked){
-          editedFields["Due_Time"] = "";
-          sh.disabled = true; sm.disabled = true;
-        }else{
-          sh.disabled = false; sm.disabled = false;
-          const H = sh.value, M = sm.value;
-          if(H && (M==="00"||M==="30")){
-            editedFields["Due_Time"] = `${H}:${M}`;
-          }else{
-            editedFields["Due_Time"] = "";
-          }
-        }
-      };
-      toggle.addEventListener("change", updateFromPickers);
-      sh.addEventListener("change", updateFromPickers);
-      sm.addEventListener("change", updateFromPickers);
+    // wiring: group status dropdown
+    const groupSel = el.querySelector("#group-status");
+    if(groupSel){
+      groupSel.addEventListener("change", e=>{
+        editedFields.__GroupStatus = e.target.value || "";
+      });
+    }
+
+    // wiring: time toggle + selects
+    const tgl = el.querySelector("#toggle-time");
+    const th  = el.querySelector("#time-hour");
+    const tm  = el.querySelector("#time-minute");
+    if(tgl && th && tm){
+      const setEnabled = on => { th.disabled = !on; tm.disabled = !on; };
+      setEnabled(tgl.checked);
+      tgl.addEventListener("change", ()=> setEnabled(tgl.checked));
+      th.addEventListener("change", ()=>{/* live state kept on build */});
+      tm.addEventListener("change", ()=>{/* live state kept on build */});
+    }
+
+    // wiring: date input
+    const di = el.querySelector("#input-date");
+    if(di){
+      di.addEventListener("change", e=>{
+        // store normalized YYYY-MM-DD
+        editedFields.Due_Date = e.target.value;
+      });
     }
   }
 
+  // ====== Build updates ======
   async function buildUpdatesFromEdited(fields){
-    const vals = {};
+    const vals={};
 
-    // Title
+    // Build item name
     pendingName = buildTitle(fields) || null;
 
-    // date6
-    const dateIso = normDate(normText(fields.Due_Date));
-    const hhmm    = parseTimeToHHMM(normText(fields.Due_Time));
-    if(dateIso){
-      if(hhmm) vals["date6"] = { date: dateIso, time: hhmm };
-      else     vals["date6"] = { date: dateIso }; // omit time when none
+    // Date/time
+    const dateYMD = normDateToYMD(fields.Due_Date);
+    let timeHM = parseTimeToHHMM(fields.Due_Time); // if user typed into generic field
+    // prefer picker state if present
+    const th = document.getElementById("time-hour");
+    const tm = document.getElementById("time-minute");
+    const tgl = document.getElementById("toggle-time");
+    if(tgl && th && tm){
+      if(tgl.checked){
+        timeHM = `${th.value}:${tm.value}`;
+      }else{
+        timeHM = null;
+      }
+    }
+    if(dateYMD){
+      vals["date6"] = timeHM ? { date:dateYMD, time:timeHM } : { date:dateYMD };
     }
 
-    // status06 from Group mapping
-    const mapped = mapGroupToStatusLabel(fields.Group);
-    if(mapped){ vals["status06"] = { label: mapped }; }
+    // Group/status06 from dropdown/mapper
+    let label = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
+    if(label && allowedGroupLabels.includes(label)){
+      vals["status06"] = { label };
+    }
 
     // Regular mapped columns
     for(const k in mapping){
@@ -355,54 +417,40 @@ document.addEventListener("DOMContentLoaded", () => {
     return vals;
   }
 
-  // ====== Apply to Monday (use String! + JSON.stringify for stability) ======
-// ====== Apply to Monday (use JSON! and pass an object, not a string) ======
-async function applyToMonday(vals){
-  const mutation = `
-    mutation($board_id: ID!, $item_id: ID!, $column_values: JSON!) {
-      change_multiple_column_values(
-        board_id: $board_id,
-        item_id: $item_id,
-        column_values: $column_values
-      ) { id }
+  // ====== Apply using JSON! (not string) ======
+  async function applyToMonday(vals){
+    const mutation = `
+      mutation($board_id: ID!, $item_id: ID!, $column_values: JSON!) {
+        change_multiple_column_values(board_id:$board_id, item_id:$item_id, column_values:$column_values) { id }
+      }
+    `;
+    const resp = await monday.api(mutation, {
+      variables: {
+        board_id: String(boardId),
+        item_id:  String(itemId),
+        column_values: vals
+      }
+    });
+    if (resp.errors && resp.errors.length){
+      const msg = resp.errors.map(e => e.message).join("; ");
+      throw new Error("column_values: " + msg);
     }
-  `;
-  const resp = await monday.api(mutation, {
-    variables: {
-      board_id: String(boardId),
-      item_id:  String(itemId),
-      column_values: vals           // <-- pass the plain object
-    }
-  });
-  if (resp.errors && resp.errors.length){
-    const msg = resp.errors.map(e => e.message).join("; ");
-    throw new Error("column_values: " + msg);
-  }
 
-  // item name (unchanged)
-  if (pendingName){
-    try{
+    if(pendingName){
+      // best-effort rename via change_item_name
       const m2 = `mutation($item_id: ID!, $name: String!){
-        change_item_name(item_id: $item_id, name: $name){ id }
+        change_item_name(item_id:$item_id, name:$name){ id }
       }`;
       const r2 = await monday.api(m2, { variables:{ item_id:String(itemId), name:pendingName } });
-      if (r2.errors && r2.errors.length){ throw new Error(r2.errors.map(e=>e.message).join("; ")) }
-    }catch(e){
-      const m3=`mutation($iid: ID!, $val: String!){
-        change_simple_column_value(item_id:$iid, column_id:"name", value:$val){ id }
-      }`;
-      const r3 = await monday.api(m3,{ variables:{ iid:String(itemId), val: JSON.stringify(pendingName) } });
-      if (r3.errors && r3.errors.length){ throw new Error("change_simple_column_value: " + r3.errors.map(er=>er.message).join("; ")) }
+      if (r2.errors && r2.errors.length){
+        throw new Error(r2.errors.map(e=>e.message).join("; "));
+      }
     }
   }
-}
-
 
   // ====== Monday context/theme ======
   monday.listen("context",(res)=>{
-    ctx = res.data||{};
-    itemId  = ctx.itemId;
-    boardId = ctx.boardId;
+    ctx=res.data||{}; itemId=ctx.itemId; boardId=ctx.boardId;
     document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`;
   });
   monday.listen("theme",(res)=>{
@@ -450,7 +498,7 @@ async function applyToMonday(vals){
     }
   };
 
-  // ====== Flows ======
+  // ====== Flow: local file ======
   async function handleLocalFile(file){
     try{
       setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
@@ -459,15 +507,10 @@ async function applyToMonday(vals){
       setMsg("Parsing fields…");
       rawFields = extractSdtWithDOM(xml);
 
-      // filtered copy (rename UI labels we changed)
       const filtered = {};
       Object.keys(rawFields).forEach(k=>{
-        if(IGNORED.has(k)) return;
-        filtered[k] = rawFields[k];
+        if(!IGNORED.has(k)) filtered[k]=rawFields[k];
       });
-      if(filtered.Team_Lead!=null){ filtered.Assigned_Lead = filtered.Team_Lead; delete filtered.Team_Lead; }
-      if(filtered.Team_Est!=null){ filtered.Estimating_Lead = filtered.Team_Est; delete filtered.Team_Est; }
-      if(filtered.PM_Lead==null){ filtered.PM_Lead = ""; }
 
       renderEditablePreview(filtered);
 
@@ -477,6 +520,7 @@ async function applyToMonday(vals){
     }catch(e){ showErr(e,"Could not read .docx") }
   }
 
+  // catch unexpected
   window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
 });
 </script>
