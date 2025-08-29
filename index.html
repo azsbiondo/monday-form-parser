@@ -14,7 +14,7 @@ html,body{height:100%}
 body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:
   radial-gradient(1200px 600px at 20% -10%,rgba(36,70,142,.25),transparent 60%),
   radial-gradient(900px 450px at 120% 20%,rgba(61,99,23,.20),transparent 60%),var(--bg);color:var(--text)}
-.container{max-width:860px;margin:24px auto;padding:0 14px} /* slightly narrower to avoid horizontal scroll */
+.container{max-width:860px;margin:24px auto;padding:0 14px} /* narrower to avoid horiz scroll */
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .title{font-size:20px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
 .badge{font-size:12px;padding:4px 8px;border-radius:999px;background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff}
@@ -42,7 +42,7 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
 .kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
 .hide{display:none!important}
 .switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
-/* force readable dropdown text in both themes */
+/* readable dropdown text in both themes */
 select.select, option { color: var(--text); background: var(--card); }
 </style>
 </head>
@@ -85,15 +85,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ====== Column mapping (send ONLY these) ======
   const mapping = {
-    "Value":      { type: "numbers", columnId: "numeric_mkq0534" },
-    "Assigned_Lead":   { type: "text",    columnId: "executive___ops_2" }, // Team Lead -> Assigned Lead
-    "PM_Lead":         { type: "text",    columnId: "text0" },             // new field (blank by default)
-    "Estimating_Lead": { type: "text",    columnId: "text8" }              // Team_Est -> Estimating Lead
+    "Value":             { type: "numbers", columnId: "numeric_mkq0534" },
+    "Assigned_Lead":     { type: "text",    columnId: "executive___ops_2" }, // Team Lead -> Assigned Lead
+    "PM_Lead":           { type: "text",    columnId: "text0" },             // new field (blank by default)
+    "Estimating_Lead":   { type: "text",    columnId: "text8" }              // Team_Est -> Estimating Lead
   };
 
   // Hide these from preview / not used
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
-  // Used for title/date/status rules (but still editable-visible where appropriate via friendly labels below)
+  // Used in title/date/status rules
   const SPECIAL_USED = new Set(["ENumber","Name_Client","Name_Project","Due_Date","Due_Time","Group"]);
 
   let ctx=null, itemId=null, boardId=null;
@@ -194,9 +194,9 @@ document.addEventListener("DOMContentLoaded", () => {
     { key:"Due_Date",       label:"Due Date",           type:"date" },
     { key:"Due_Time",       label:"Due Time",           type:"time" },  // has toggle
     { key:"Value",          label:"Value",              type:"text" },
-    { key:"Assigned_Lead",  label:"Assigned Lead",      type:"text" },  // Team Lead -> Assigned Lead
-    { key:"PM_Lead",        label:"PM Lead",            type:"text" },  // new; blank initially
-    { key:"Estimating_Lead",label:"Estimating Lead",    type:"text" }   // Team_Est -> Estimating Lead
+    { key:"Assigned_Lead",  label:"Assigned Lead",      type:"text" },
+    { key:"PM_Lead",        label:"PM Lead",            type:"text" },
+    { key:"Estimating_Lead",label:"Estimating Lead",    type:"text" }
   ];
 
   const GROUP_OPTIONS = [
@@ -206,20 +206,20 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderEditablePreview(fields){
     const el=document.getElementById("preview");
 
-    // working copy (including PM_Lead default blank)
+    // working copy (ensure PM_Lead present)
     editedFields = {};
     FRIENDLY_ORDER.forEach(def=>{
       if(IGNORED.has(def.key)) return;
-      if(def.key==="PM_Lead" && fields[def.key]==null) editedFields[def.key] = ""; // ensure present
+      if(def.key==="PM_Lead" && fields[def.key]==null) editedFields[def.key] = "";
       else editedFields[def.key] = fields[def.key] ?? "";
     });
 
     const rows = FRIENDLY_ORDER
       .filter(def => !IGNORED.has(def.key))
       .map(def=>{
-        const value = editedFields[def.key] ?? "";
+        const rawVal = editedFields[def.key] ?? "";
         if(def.type==="group"){
-          const opts = GROUP_OPTIONS.map(g => `<option value="${g}" ${String(value)===g?'selected':''}>${g}</option>`).join("");
+          const opts = GROUP_OPTIONS.map(g => `<option value="${g}" ${String(rawVal)===g?'selected':''}>${g}</option>`).join("");
           return `
             <div class="row">
               <div class="key">${def.label}</div>
@@ -233,16 +233,17 @@ document.addEventListener("DOMContentLoaded", () => {
           `;
         }
         if(def.type==="date"){
+          // FIX: normalize anything like 8/28/25 to yyyy-MM-dd for the date input
+          const iso = normDate(rawVal) || "";
           return `
             <div class="row">
               <div class="key">${def.label}</div>
-              <div><input class="input" type="date" data-key="${def.key}" value="${value}"></div>
+              <div><input class="input" type="date" data-key="${def.key}" value="${iso}"></div>
             </div>
           `;
         }
         if(def.type==="time"){
-          // Build hour/mins (00 or 30), 24h, no seconds; plus toggle
-          const hhmm = parseTimeToHHMM(value);
+          const hhmm = parseTimeToHHMM(rawVal);
           const hasTime = !!hhmm;
           const [hSel,mSel] = hasTime ? hhmm.split(":") : ["",""];
           const hours = Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
@@ -269,7 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return `
           <div class="row">
             <div class="key">${def.label}</div>
-            <div><input class="input" data-key="${def.key}" value="${String(value).replace(/"/g,'&quot;')}"></div>
+            <div><input class="input" data-key="${def.key}" value="${String(rawVal).replace(/"/g,'&quot;')}"></div>
           </div>
         `;
       }).join("");
@@ -282,13 +283,14 @@ document.addEventListener("DOMContentLoaded", () => {
     el.classList.remove("kv-empty");
     el.innerHTML = rows;
 
-    // wire inputs
+    // wire text inputs
     el.querySelectorAll("input.input").forEach(inp=>{
       inp.addEventListener("input", e=>{
         const key = e.target.getAttribute("data-key");
         editedFields[key] = e.target.value;
       });
     });
+    // wire selects (group + time pickers below)
     el.querySelectorAll("select.select[data-key]").forEach(sel=>{
       sel.addEventListener("change", e=>{
         const key = e.target.getAttribute("data-key");
@@ -332,7 +334,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const hhmm    = parseTimeToHHMM(normText(fields.Due_Time));
     if(dateIso){
       if(hhmm) vals["date6"] = { date: dateIso, time: hhmm };
-      else     vals["date6"] = { date: dateIso }; // omit time entirely if toggle off/blank
+      else     vals["date6"] = { date: dateIso }; // omit time when none
     }
 
     // status06 from Group mapping
@@ -353,19 +355,22 @@ document.addEventListener("DOMContentLoaded", () => {
     return vals;
   }
 
-  // ====== Apply to Monday (fixed: JSON variable + ID! types) ======
+  // ====== Apply to Monday (use String! + JSON.stringify for stability) ======
   async function applyToMonday(vals){
-    // 1) column updates via variables (NO manual escaping; JSON! type)
     const mutation = `
-      mutation($board_id: ID!, $item_id: ID!, $column_values: JSON!) {
-        change_multiple_column_values(board_id: $board_id, item_id: $item_id, column_values: $column_values) { id }
+      mutation($board_id: ID!, $item_id: ID!, $column_values: String!) {
+        change_multiple_column_values(
+          board_id: $board_id,
+          item_id: $item_id,
+          column_values: $column_values
+        ) { id }
       }
     `;
     const resp = await monday.api(mutation, {
       variables: {
         board_id: String(boardId),
         item_id:  String(itemId),
-        column_values: vals
+        column_values: JSON.stringify(vals) // <- pass as string
       }
     });
     if(resp.errors && resp.errors.length){
@@ -373,7 +378,7 @@ document.addEventListener("DOMContentLoaded", () => {
       throw new Error("column_values: " + msg);
     }
 
-    // 2) name update (prefer change_item_name; fallback to change_simple_column_value if needed)
+    // item name
     if(pendingName){
       try{
         const m2 = `mutation($item_id: ID!, $name: String!){
@@ -452,15 +457,12 @@ document.addEventListener("DOMContentLoaded", () => {
       setMsg("Parsing fields…");
       rawFields = extractSdtWithDOM(xml);
 
-      // map old field names to new ones for preview keys
+      // filtered copy (rename UI labels we changed)
       const filtered = {};
       Object.keys(rawFields).forEach(k=>{
         if(IGNORED.has(k)) return;
         filtered[k] = rawFields[k];
       });
-
-      // ensure label remaps for preview keys
-      // Team_Lead -> Assigned_Lead ; Team_Est -> Estimating_Lead
       if(filtered.Team_Lead!=null){ filtered.Assigned_Lead = filtered.Team_Lead; delete filtered.Team_Lead; }
       if(filtered.Team_Est!=null){ filtered.Estimating_Lead = filtered.Team_Est; delete filtered.Team_Est; }
       if(filtered.PM_Lead==null){ filtered.PM_Lead = ""; }
