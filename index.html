@@ -119,7 +119,7 @@ body{
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
-  // === Column mapping (includes PM Lead -> text0) ===
+  // === Fixed mappings ===
   const mapping={
     "Value":{"type":"numbers","columnId":"numeric_mkq0534"},
     "Team_Lead":{"type":"text","columnId":"executive___ops_2"},
@@ -144,9 +144,9 @@ document.addEventListener("DOMContentLoaded", () => {
     ["Scope","scope","textarea"]
   ];
 
-  let ctx=null,itemId=null,boardId=null;
+  let itemId=null,boardId=null;
   let edited={}, includeTime=false;
-  let boardSchema=null;
+  let boardSchema=null; // { byId, groupColId, dateColId, statusLabels }
 
   // === Helpers ===
   const $ = sel => document.querySelector(sel);
@@ -232,7 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  // === Pre-translate Group ===
+  // === Group translation rules ===
   function translateGroupToOption(v){
     if(!v) return "";
     const s=String(v).trim();
@@ -244,7 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return "";
   }
 
-  // === Editable preview ===
+  // === Editable preview UI ===
   function renderEditablePreview(source){
     const el=$("#preview"); el.innerHTML=""; el.classList.remove("kv-empty");
     edited = {};
@@ -304,16 +304,29 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#apply").disabled = false;
   }
 
-  // === Build payload ===
+  // === Build payload (uses dynamic column IDs) ===
   function buildColumnUpdates(){
+    if(!boardSchema) return {};
     const vals={};
+
+    // date
     const d = edited.Due_Date || "";
     const t = includeTime ? (edited.Due_Time || "") : "";
-    if(d){ vals["date6"] = t ? {"date": d, "time": t} : {"date": d}; }
-    if(edited.Group){ vals["status06"] = {"label": edited.Group}; }
+    if(d && boardSchema.dateColId){
+      vals[boardSchema.dateColId] = t ? {"date": d, "time": t} : {"date": d};
+    }
+
+    // group/status
+    if(edited.Group && boardSchema.groupColId){
+      vals[boardSchema.groupColId] = {"label": edited.Group};
+    }
+
+    // simple mapped text/numbers
     for(const k in mapping){
       const m=mapping[k], v=edited[k];
       if(v==null || v==="") continue;
+      // make sure the column exists on this board
+      if(!boardSchema.byId[m.columnId]) continue;
       if(m.type==="text"){ vals[m.columnId]=v; }
       else if(m.type==="numbers"){
         const n=Number(String(v).replace(/[^0-9.\-]/g,""));
@@ -331,7 +344,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return name;
   }
 
-  // === Schema fetch + validation (IDs as strings) ===
+  // === Schema fetch + dynamic IDs ===
   async function fetchBoardSchema(){
     const q=`query($bid:[ID!]){
       boards(ids:$bid){
@@ -342,21 +355,49 @@ document.addEventListener("DOMContentLoaded", () => {
     const res = await runGql("schema", q, {bid:[String(boardId)]});
     const cols = (res.data?.boards?.[0]?.columns)||[];
     const byId = {}; cols.forEach(c=>byId[c.id]=c);
+
+    // Find Group status column
+    const groupCol = cols.find(c => c.type==="color" || c.type==="status") || 
+                     cols.find(c => c.title?.toLowerCase?.() === "group" && (c.type==="status"||c.type==="color")) ||
+                     cols.find(c => c.title?.toLowerCase?.().includes("group") && (c.type==="status"||c.type==="color"));
+    const groupColId = groupCol?.id || "status06"; // last-resort fallback
+
+    // Find Due Date column
+    let dateCol = cols.find(c => c.title?.toLowerCase?.() === "due date" && c.type==="date");
+    if(!dateCol) dateCol = cols.find(c => c.type==="date"); // first date if exact title not found
+    const dateColId = dateCol?.id || "date6"; // fallback
+
+    // Parse status labels (be robust to different shapes)
     let statusLabels=[];
-    const st = byId["status06"];
+    const st = byId[groupColId];
     if(st && st.settings_str){
       try{
         const s=JSON.parse(st.settings_str);
-        statusLabels = (s.labels || Object.values(s.labels_groups?.[0]?.labels||{})).filter(Boolean);
+        if (s.labels && typeof s.labels === "object") {
+          statusLabels = Object.values(s.labels).filter(Boolean);
+        } else if (Array.isArray(s.labels)) {
+          statusLabels = s.labels.filter(Boolean);
+        }
+        if ((!statusLabels || statusLabels.length===0) && Array.isArray(s.labels_groups) && s.labels_groups[0]?.labels){
+          statusLabels = Object.values(s.labels_groups[0].labels).filter(Boolean);
+        }
+        if ((!statusLabels || statusLabels.length===0) && s.labels_positions){
+          statusLabels = Object.keys(s.labels_positions);
+        }
       }catch(_){}
     }
-    console.log("[Schema] columns", byId);
-    console.log("[Schema] status06 labels", statusLabels);
-    return {byId, statusLabels};
+
+    console.log("[Schema] groupColId", groupColId, "dateColId", dateColId);
+    console.log("[Schema] status labels", statusLabels);
+
+    return {byId, groupColId, dateColId, statusLabels};
   }
+
+  // Lenient validator: if we can’t read labels, don’t block updates
   function validatePayload(vals, schema){
     const warnings=[];
     const cleaned = {...vals};
+
     for(const colId of Object.keys(cleaned)){
       const col = schema.byId[colId];
       if(!col){
@@ -364,16 +405,18 @@ document.addEventListener("DOMContentLoaded", () => {
         delete cleaned[colId];
         continue;
       }
-      if(colId==="status06"){
+      if(col.type==="status" || col.type==="color"){
         const label = cleaned[colId]?.label;
-        if(label && !(schema.statusLabels||[]).includes(label)){
-          warnings.push(`Status label '${label}' not in status06; skipping.`);
-          delete cleaned[colId];
+        if(label && Array.isArray(schema.statusLabels) && schema.statusLabels.length>0){
+          if(!schema.statusLabels.includes(label)){
+            warnings.push(`Status label '${label}' not found in '${col.title}'; skipping.`);
+            delete cleaned[colId];
+          }
         }
       }
-      if(colId==="date6"){
+      if(col.type==="date"){
         const v=cleaned[colId];
-        if(!v || !v.date){ warnings.push(`Date for 'date6' missing/invalid; skipping.`); delete cleaned[colId]; }
+        if(!v || !v.date){ warnings.push(`Date for '${col.title}' missing/invalid; skipping.`); delete cleaned[colId]; }
       }
     }
     if(warnings.length){ setMsg("Note: "+warnings.join(" ")); }
@@ -381,28 +424,18 @@ document.addEventListener("DOMContentLoaded", () => {
     return cleaned;
   }
 
-  // === Mutations (IDs as strings) ===
+  // === Mutations (IDs as strings, JSON! only) ===
   async function applyToMonday(vals, nameCandidate, scopeText){
     if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
     const cleaned = validatePayload(vals, boardSchema);
 
-    // 1) change_multiple_column_values (JSON! first, fallback to string)
     if(Object.keys(cleaned).length>0){
       const mVar=`mutation($bid:ID!,$iid:ID!,$vals: JSON!){
         change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$vals){ id }
       }`;
-      try{
-        await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
-      }catch(err){
-        const s = JSON.stringify(cleaned);
-        const mStr=`mutation($bid:ID!,$iid:ID!,$s:String!){
-          change_multiple_column_values(board_id:$bid,item_id:$iid,column_values:$s){ id }
-        }`;
-        await runGql("set-columns(string)", mStr, {bid:String(boardId),iid:String(itemId),s});
-      }
+      await runGql("set-columns(JSON)", mVar, {bid:String(boardId),iid:String(itemId),vals:cleaned});
     }
 
-    // 2) change_item_name
     if(nameCandidate){
       const mName=`mutation($iid:ID!,$name:String!){
         change_item_name(item_id:$iid,name:$name){ id }
@@ -410,7 +443,6 @@ document.addEventListener("DOMContentLoaded", () => {
       await runGql("set-name", mName, {iid:String(itemId),name:nameCandidate});
     }
 
-    // 3) create_update for Scope
     if(scopeText && scopeText.trim()){
       const body=`Scope: ${scopeText.trim()}`;
       const mUpd=`mutation($iid:ID!,$body:String!){
@@ -421,7 +453,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // === Monday context/theme ===
-  monday.listen("context",(res)=>{const c=res.data||{};ctx=c;itemId=c.itemId;boardId=c.boardId;$("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`});
+  monday.listen("context",(res)=>{
+    const c=res.data||{};
+    itemId=c.itemId; boardId=c.boardId;
+    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`;
+  });
   monday.listen("theme",(res)=>{$("#theme-pill").innerText=`Theme: ${res.data?.theme||"auto"}`});
 
   // === UI wiring ===
@@ -445,10 +481,11 @@ document.addEventListener("DOMContentLoaded", () => {
     try{
       if(!edited || Object.keys(edited).length===0){ setMsg("Nothing to apply"); return }
       setMsg("Building updates…");
+      // Ensure schema is loaded so dynamic IDs exist before building payload
+      if(!boardSchema){ boardSchema = await fetchBoardSchema(); }
       const vals = buildColumnUpdates();
       const nameCandidate = buildItemNameFromEdited();
       const scopeText = edited.Scope || "";
-
       if(Object.keys(vals).length===0 && !nameCandidate && !scopeText){
         setMsg("Nothing mappable found"); return;
       }
