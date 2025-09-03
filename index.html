@@ -108,14 +108,16 @@ select option{color:var(--text);background:var(--bg)}
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
+  // Column mapping
   const mapping = {
-    "Value": { type:"numbers", columnId:"numeric_mkq0534" },
-    "Assigned_Lead": { type:"text", columnId:"executive___ops_2" },
-    "Lead": { type:"text", columnId:"executive___ops_2" },
-    "PM": { type:"text", columnId:"text0" },
-    "EST": { type:"text", columnId:"text8" }
+    "Value":          { type:"numbers", columnId:"numeric_mkq0534" },
+    "Assigned_Lead":  { type:"text",    columnId:"executive___ops_2" },
+    "Lead":           { type:"text",    columnId:"executive___ops_2" }, // overrides Assigned_Lead if present
+    "PM":             { type:"text",    columnId:"text0" },
+    "EST":            { type:"text",    columnId:"text8" }
   };
 
+  // UI order (Lead/PM/EST appear after Value)
   const FIELD_ORDER = [
     "ENumber","Name_Client","Name_Project",
     "Due_Date","Due_Time","Group",
@@ -136,7 +138,10 @@ document.addEventListener("DOMContentLoaded", () => {
     "EST":"EST"
   };
 
+  // Ignore these incoming tags
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
+
+  // Allowed status labels for Group mapping
   const allowedGroupLabels = ["SPC","ENG","MAJ"];
 
   function mapGroupToStatusLabel(v){
@@ -149,17 +154,19 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  function isPlaceholderName(v){
-    return v && String(v).trim().toLowerCase() === "name";
-  }
+  // Treat literal "name" as placeholder
+  function isPlaceholderName(v){ return v && String(v).trim().toLowerCase() === "name"; }
 
+  // State
   let itemId=null, boardId=null;
   let rawFields={}, editedFields={}, pendingName=null;
 
+  // DOM helpers
   const $ = sel => document.querySelector(sel);
   const setMsg = t => $("#msg").innerText = t || "";
   function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
 
+  // Normalizers
   function normText(s){return (s||"").trim()}
   function normDate(s){
     if(!s) return null;
@@ -185,12 +192,14 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
   }
 
+  // Item name builder
   function buildTitle(fields){
     const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
     const parts=[a,b,c].filter(Boolean);
     return parts.length? parts.join(" ") : null;
   }
 
+  // DOCX unzip + SDT extraction (w:tag / w:alias)
   async function parseDocxArrayBuffer(ab){
     const zip = await JSZip.loadAsync(ab);
     const f = zip.file("word/document.xml");
@@ -231,6 +240,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
+  // UI renderer
   function renderEditablePreview(fields){
     const el = $("#preview");
     editedFields = {};
@@ -238,26 +248,25 @@ document.addEventListener("DOMContentLoaded", () => {
     if(!keys.length){ el.classList.add("kv-empty"); el.innerHTML="No fields extracted yet."; return; }
     el.classList.remove("kv-empty");
     keys.forEach(k=>{ editedFields[k] = fields[k] ?? ""; });
+
     const normD = normDate(editedFields.Due_Date) || "";
     const normT = parseTimeToHHMM(editedFields.Due_Time) || "";
+
     const rowsHtml = keys.map(key=>{
       const label = LABELS[key] || key;
+
       if(key==="Due_Date"){
-        return `
-        <div class="row">
-          <div class="key">${label}</div>
-          <div><input id="dueDate" type="date" class="date-input" value="${normD}" /></div>
-        </div>`;
+        return `<div class="row"><div class="key">${label}</div>
+          <div><input id="dueDate" type="date" class="date-input" value="${normD}" /></div></div>`;
       }
+
       if(key==="Due_Time"){
         const isOn = !!normT;
         const hh = isOn ? normT.split(":")[0] : "";
         const mm = isOn ? normT.split(":")[1] : "";
         const hours = Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
         const minutes = ["00","30"];
-        return `
-        <div class="row">
-          <div class="key">${label}</div>
+        return `<div class="row"><div class="key">${label}</div>
           <div style="display:flex;gap:8px;align-items:center">
             <label class="switch">
               <input id="timeToggle" type="checkbox" ${isOn?"checked":""} />
@@ -271,48 +280,43 @@ document.addEventListener("DOMContentLoaded", () => {
               <option value="">MM</option>
               ${minutes.map(m=>`<option value="${m}" ${m===mm?"selected":""}>${m}</option>`).join("")}
             </select>
-          </div>
-        </div>`;
+          </div></div>`;
       }
+
       if(key==="Group"){
         const pre = mapGroupToStatusLabel(editedFields[key]) || "";
-        return `
-        <div class="row">
-          <div class="key">${label}</div>
-          <div>
-            <select id="groupSelect">
-              <option value="">— Select —</option>
-              ${allowedGroupLabels.map(l=>`<option value="${l}" ${l===pre?"selected":""}>${l}</option>`).join("")}
-            </select>
-          </div>
-        </div>`;
+        return `<div class="row"><div class="key">${label}</div>
+          <div><select id="groupSelect">
+            <option value="">— Select —</option>
+            ${allowedGroupLabels.map(l=>`<option value="${l}" ${l===pre?"selected":""}>${l}</option>`).join("")}
+          </select></div></div>`;
       }
+
       const val = (editedFields[key]??"").toString().replace(/"/g,"");
-      return `
-      <div class="row">
-        <div class="key">${label}</div>
-        <div><input class="input" data-key="${key}" value="${val}"></div>
-      </div>`;
+      return `<div class="row"><div class="key">${label}</div>
+        <div><input class="input" data-key="${key}" value="${val}"></div></div>`;
     }).join("");
+
     el.innerHTML = rowsHtml;
+
     el.querySelectorAll("input.input").forEach(inp=>{
       inp.addEventListener("input", e=>{
         const k = e.target.getAttribute("data-key");
         editedFields[k] = e.target.value;
       });
     });
+
     const dueDateEl = $("#dueDate");
     if(dueDateEl){
       dueDateEl.addEventListener("input", e=>{
         editedFields.Due_Date = e.target.value;
       });
     }
+
     const tToggle = $("#timeToggle");
     const tHH = $("#timeHH");
     const tMM = $("#timeMM");
-    function syncTimeEnabled(on){
-      tHH.disabled = !on; tMM.disabled = !on;
-    }
+    function syncTimeEnabled(on){ if(tHH&&tMM){ tHH.disabled=!on; tMM.disabled=!on; } }
     if(tToggle){
       tToggle.addEventListener("change", e=>{
         const on = e.target.checked;
@@ -327,13 +331,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     [tHH,tMM].forEach(sel=>{
       if(sel) sel.addEventListener("change", ()=>{
-        if(tToggle.checked){
+        if(tToggle && tToggle.checked){
           const hh = tHH.value || "00";
           const mm = tMM.value || "00";
           editedFields.Due_Time = `${hh}:${mm}`;
         }
       });
     });
+
     const gSel = $("#groupSelect");
     if(gSel){
       gSel.addEventListener("change", e=>{
@@ -343,6 +348,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Check if Date column has "Show time"
   async function isDateColumnTimeEnabled(bid, colId){
     const q = `query($bid:[ID!],$cid:[String!]){
       boards(ids:$bid){ columns(ids:$cid){ id settings_str } }
@@ -352,12 +358,16 @@ document.addEventListener("DOMContentLoaded", () => {
     try { return !!(s && JSON.parse(s).time); } catch { return false; }
   }
 
+  // Build GraphQL payload
   async function buildColumnValuesFromEdited(fields){
     const vals = {};
+
+    // Title
     pendingName = buildTitle(fields) || null;
 
+    // Date (with time only if column supports it)
     const dateIso = normDate(fields.Due_Date);
-    const hhmm = parseTimeToHHMM(fields.Due_Time);
+    const hhmm = parseTimeToHHMM(fields.Due_Time); // already 24h
     if(dateIso){
       let withTime = false;
       if(hhmm){
@@ -366,52 +376,63 @@ document.addEventListener("DOMContentLoaded", () => {
       vals["date6"] = withTime ? { date:dateIso, time:hhmm } : { date:dateIso };
     }
 
+    // Group (Status)
     const chosen = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
     if(chosen && allowedGroupLabels.includes(chosen)){
       vals["status06"] = { label: chosen };
     }
 
+    // Text/Numbers
     for(const k of Object.keys(mapping)){
       const m = mapping[k];
       let v = fields[k];
 
+      // EST: join Team_Est1..4, skipping blanks and literal "name"
       if(k==="EST"){
-        const arr = [
-          fields.Team_Est1, fields.Team_Est2, fields.Team_Est3, fields.Team_Est4
-        ].filter(x=>x && String(x).trim()!=="" && !isPlaceholderName(x))
-         .map(x=>String(x).trim());
-        if(arr.length) v = arr.join(" / "); else v = "";
+        const arr = [fields.Team_Est1,fields.Team_Est2,fields.Team_Est3,fields.Team_Est4]
+          .filter(x => x && String(x).trim()!=="" && !isPlaceholderName(x))
+          .map(x => String(x).trim());
+        v = arr.length ? arr.join(" / ") : "";
       }
 
+      // PM: prefer Team_PM else Team_Lead; skip placeholders
       if(k==="PM"){
-        const pmRaw = fields.Team_PM && !isPlaceholderName(fields.Team_PM) ? fields.Team_PM
-                     : (fields.Team_Lead && !isPlaceholderName(fields.Team_Lead) ? fields.Team_Lead : "");
+        const pmRaw = (fields.Team_PM && !isPlaceholderName(fields.Team_PM)) ? fields.Team_PM
+                    : ((fields.Team_Lead && !isPlaceholderName(fields.Team_Lead)) ? fields.Team_Lead : "");
         v = pmRaw || v || "";
       }
 
+      // Lead: take provided Lead if present
       if(k==="Lead"){
         v = fields.Lead || v || "";
       }
 
+      // Lead overrides Assigned_Lead’s target column
       if(k==="Assigned_Lead" && fields.Lead){
-        continue; /* Lead overrides Assigned_Lead target column */
+        continue;
       }
 
       if(v==null || v==="") continue;
-      if(m.type==="text"){ vals[m.columnId] = v; }
-      else if(m.type==="numbers"){
+
+      if(m.type==="text"){
+        vals[m.columnId] = v;
+      } else if(m.type==="numbers"){
         const n = Number(String(v).replace(/[^0-9.\-]/g,""));
         if(!isNaN(n)) vals[m.columnId] = String(n);
       }
     }
 
+    // Redundant safeguard: ensure Lead wins
     if(fields.Lead && mapping.Lead){
       vals[mapping.Lead.columnId] = fields.Lead;
     }
+
     return vals;
   }
 
+  // Mutations
   async function applyToMonday(columnValues){
+    // 1) Change columns
     const mutation = `
       mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
         change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
@@ -422,17 +443,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if(res.errors && res.errors.length){
       throw new Error(res.errors.map(e=>e.message).join("; "));
     }
+
+    // 2) Rename via name column (requires board_id)
     if(pendingName){
-      const m = `mutation($itemId: ID!, $name: String!){
-        change_item_name(item_id:$itemId, name:$name){ id }
+      const m2 = `mutation($boardId: ID!, $itemId: ID!, $val: String!){
+        change_simple_column_value(board_id:$boardId, item_id:$itemId, column_id:"name", value:$val){ id }
       }`;
-      const r = await monday.api(m,{ variables:{ itemId, name: pendingName }});
-      if(r.errors && r.errors.length){
-        throw new Error(r.errors.map(e=>e.message).join("; "));
+      const r2 = await monday.api(m2,{ variables:{ boardId, itemId, val: pendingName }});
+      if(r2.errors && r2.errors.length){
+        throw new Error(r2.errors.map(e=>e.message).join("; "));
       }
     }
   }
 
+  // Context & theme
   monday.listen("context",(res)=>{
     const c=res.data||{};
     itemId = c.itemId!=null ? String(c.itemId) : null;
@@ -444,11 +468,14 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#theme-pill").innerText=`Theme: ${theme}`;
   });
 
+  // UI events
   const dz = $("#dropzone"), fi = $("#fileinput");
   $("#choose").onclick=()=>fi.click();
+
   fi.addEventListener("change",e=>{
     const f=e.target.files?.[0];
-    if(f && /\.docx$/i.test(f.name)) handleLocalFile(f); else setMsg("Please choose a .docx");
+    if(f && /\.docx$/i.test(f.name)) handleLocalFile(f);
+    else setMsg("Please choose a .docx");
   });
   dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("k")});
   dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("k")});
@@ -464,18 +491,25 @@ document.addEventListener("DOMContentLoaded", () => {
     try{
       if(!editedFields || Object.keys(editedFields).length===0) return setMsg("Nothing to apply");
       setMsg("Building updates…");
+
       const working = {};
       Object.keys(editedFields).forEach(k=>{ if(!IGNORED.has(k)) working[k]=editedFields[k]; });
+
       const columnValues = await buildColumnValuesFromEdited(working);
       if(Object.keys(columnValues).length===0 && !buildTitle(working)){
         return setMsg("Nothing mappable found");
       }
+
+      // Debug: see exactly what we send
+      console.log("Outgoing columnValues:", JSON.stringify(columnValues, null, 2));
+
       setMsg("Updating item…");
       await applyToMonday(columnValues);
       setMsg("Done");
     }catch(e){ showErr(e,"Update failed"); }
   };
 
+  // Local file handler
   async function handleLocalFile(file){
     try{
       setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
@@ -487,12 +521,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const view = {};
       FIELD_ORDER.forEach(k=>{ if(k in rawFields) view[k] = rawFields[k]; });
 
-      if(rawFields.Team_Final) view.Lead = rawFields.Team_Final;
+      // Lead
+      if(rawFields.Team_Final && !isPlaceholderName(rawFields.Team_Final)) {
+        view.Lead = rawFields.Team_Final;
+      } else {
+        view.Lead = "";
+      }
 
+      // PM: Team_PM else Team_Lead (skip placeholders)
       const pmPref = (rawFields.Team_PM && !isPlaceholderName(rawFields.Team_PM)) ? rawFields.Team_PM
                    : ((rawFields.Team_Lead && !isPlaceholderName(rawFields.Team_Lead)) ? rawFields.Team_Lead : "");
       view.PM = pmPref || "";
 
+      // EST: join 1..4, skipping blanks and literal "name"
       const estParts = [rawFields.Team_Est1,rawFields.Team_Est2,rawFields.Team_Est3,rawFields.Team_Est4]
         .filter(x=>x && String(x).trim()!=="" && !isPlaceholderName(x))
         .map(x=>String(x).trim());
