@@ -1,27 +1,23 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Form Parser</title>
-<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Form → Columns (Item View)</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js/dist/main.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 :root{
-  --bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;
-  --accent:#3d6317;--accent-2:#24468E;--border:rgba(255,255,255,.12);
-  --shadow:0 10px 25px rgba(0,0,0,.35);
-  --field-bg:rgba(255,255,255,.05); --field-text:var(--text);
-  --select-bg:#11141a; --select-text:#eaeef6; --option-bg:#11141a; --option-text:#eaeef6;
+  --bg:#0b0c0f;--card:rgba(255,255,255,.06);--text:#eaeef6;--muted:#aab2c5;--accent:#3d6317;--accent-2:#24468E;
+  --border:rgba(255,255,255,.12);--shadow:0 10px 25px rgba(0,0,0,.35);
+  --ctl-bg:#11151b; --ctl-text:#eaeef6; --ctl-border:rgba(255,255,255,.18); --ctl-placeholder:#95a0b8;
 }
 @media (prefers-color-scheme: light){
   :root{
-    --bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;
-    --accent:#3d6317;--accent-2:#24468E;--border:rgba(10,12,16,.08);
-    --shadow:0 10px 25px rgba(10,12,16,.08);
-    --field-bg:#fff; --field-text:#0b0c0f;
-    --select-bg:#ffffff; --select-text:#0b0c0f; --option-bg:#ffffff; --option-text:#0b0c0f;
+    --bg:#f6f7fb;--card:#ffffff;--text:#0b0c0f;--muted:#5a6173;--accent:#3d6317;--accent-2:#24468E;
+    --border:rgba(10,12,16,.08);--shadow:0 10px 25px rgba(10,12,16,.08);
+    --ctl-bg:#ffffff; --ctl-text:#0b0c0f; --ctl-border:rgba(10,12,16,.14); --ctl-placeholder:#667089;
   }
 }
 html,body{height:100%}
@@ -33,52 +29,53 @@ body{
     var(--bg);
   color:var(--text)
 }
-.container{max-width:860px;margin:24px auto;padding:0 12px} /* narrower to avoid horiz scroll */
-.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.title{font-size:20px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
+.container{max-width:860px;margin:18px auto;padding:0 14px} /* narrower so no horizontal scroll in Monday */
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.title{font-size:18px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
 .badge{font-size:12px;padding:4px 8px;border-radius:999px;background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
-.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:14px 14px 0 14px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:12px 12px 0 12px}
 .actions{display:flex;gap:10px;flex-wrap:wrap}
-.btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06));color:var(--text);border:1px solid var(--border);transition:transform .05s ease,box-shadow .2s ease,border-color .2s ease}
+.btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06));color:var(--text);
+  border:1px solid var(--border);transition:transform .05s ease,box-shadow .2s ease,border-color .2s ease}
 .btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .btn.primary{background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;border-color:transparent}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
-.statusline{font-size:12px;color:var(--muted);padding:0 14px 10px 14px}
-.body{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px}
-@media (max-width:940px){.body{grid-template-columns:1fr}}
+.statusline{font-size:12px;color:var(--muted);padding:0 12px 10px 12px}
+.body{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+@media (max-width:900px){.body{grid-template-columns:1fr}}
 .card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:14px;padding:14px;min-height:180px}
 .card h2{font-size:14px;margin:0 0 10px 0;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
 .drop{display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;transition:border-color .2s ease,background .2s ease}
 .drop.k{border-color:var(--accent-2);background:rgba(36,70,142,.06)}
-.preview{max-height:310px;overflow:auto}
-.row{display:grid;grid-template-columns:210px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
+.preview{max-height:340px;overflow:auto}
+.row{display:grid;grid-template-columns:220px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
 .key{font-weight:700}
-.input, select, .timewrap select, .timewrap input[type="checkbox"]{
-  width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);
-  background:var(--field-bg);color:var(--field-text)
+.input, select, .time-select, .date-input {
+  width:100%;padding:9px 10px;border-radius:10px;border:1px solid var(--ctl-border);
+  background:var(--ctl-bg);color:var(--ctl-text);appearance:none;outline:none;
 }
-/* readable selects/options in both themes */
-select, .timewrap select{ background:var(--select-bg)!important; color:var(--select-text)!important; }
-select option, .timewrap select option{ background:var(--option-bg)!important; color:var(--option-text)!important; }
-
+select:focus, .input:focus, .date-input:focus, .time-select:focus{box-shadow:0 0 0 2px rgba(36,70,142,.35)}
+select option{color:var(--text);background:var(--bg)} /* readable options in both themes */
+.switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.switch input{appearance:none;width:38px;height:22px;border-radius:999px;background:var(--ctl-border);position:relative;outline:none;cursor:pointer;transition:background .2s ease}
+.switch input:checked{background:linear-gradient(135deg,var(--accent-2),var(--accent))}
+.switch input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s ease}
+.switch input:checked::after{left:19px}
 .kv-empty{color:var(--muted)}
-.kpi{display:flex;gap:10px;flex-wrap:wrap}
-.kpill{font-size:12px;border-radius:999px;padding:6px 10px;border:1px solid var(--border);color:var(--muted)}
 .hint{font-size:12px;color:var(--muted);margin-top:6px}
 .hide{display:none!important}
-.timewrap{display:flex;gap:8px;align-items:center}
-.toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
-.toggle input{width:auto}
+.footer-note{font-size:11px;color:var(--muted);padding:10px 12px 14px 12px}
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
     <div class="title">Form → Columns <span class="badge">Item View</span></div>
-    <div class="kpi">
-      <div class="kpill" id="theme-pill">Theme: auto</div>
-      <div class="kpill" id="ctx-pill">Board: — | Item: —</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div class="badge" id="theme-pill" style="background:transparent;color:var(--muted);border:1px solid var(--border)">Theme: auto</div>
+      <div class="badge" id="ctx-pill" style="background:transparent;color:var(--muted);border:1px solid var(--border)">Board: — | Item: —</div>
     </div>
   </div>
   <div class="panel">
@@ -96,13 +93,14 @@ select option, .timewrap select option{ background:var(--option-bg)!important; c
       <div class="card">
         <h2>Dropzone</h2>
         <div id="dropzone" class="drop">Drag and drop the Estimate Engagement form here.</div>
-        <input id="fileinput" type="file" accept=".docx" style="display:none">
+        <input id="fileinput" type="file" accept=".docx" style="display:none" />
       </div>
       <div class="card">
         <h2>Preview & Modify</h2>
         <div id="preview" class="preview kv-empty">No fields extracted yet.</div>
       </div>
     </div>
+    <div class="footer-note">All processing stays in your browser; only column updates are sent to Monday.</div>
   </div>
 </div>
 
@@ -110,76 +108,106 @@ select option, .timewrap select option{ background:var(--option-bg)!important; c
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
-  /* ===== Column mapping ===== */
+  // ===== Mapping for columns you asked to send =====
   const mapping = {
-    "Value":      { type:"numbers", columnId:"numeric_mkq0534" },
-    "Team_Lead":  { type:"text",    columnId:"executive___ops_2" }, // Assigned Lead
-    "Team_Est":   { type:"text",    columnId:"text8" },             // Estimating Lead
-    "PM_Lead":    { type:"text",    columnId:"text0" }              // PM Lead (new)
+    "Value":        { type:"numbers", columnId:"numeric_mkq0534" },
+    "Assigned_Lead":{ type:"text",    columnId:"executive___ops_2" }, // (Team Lead → Assigned Lead)
+    "PM_Lead":      { type:"text",    columnId:"text0" },             // new blank field
+    "Estimating_Lead":{type:"text",   columnId:"text8" }              // (Team Est → Estimating Lead)
   };
 
-  /* ===== Rules ===== */
+  // Friendly labels & order for Preview & Modify
+  const FIELD_ORDER = [
+    "ENumber","Name_Client","Name_Project",
+    "Due_Date","Due_Time","Group",
+    "Assigned_Lead","PM_Lead","Estimating_Lead",
+    "Value"
+  ];
+  const LABELS = {
+    "ENumber":"E Number",
+    "Name_Client":"Client",
+    "Name_Project":"Project",
+    "Due_Date":"Due date",
+    "Due_Time":"Due time",
+    "Group":"Group",
+    "Assigned_Lead":"Assigned Lead",
+    "PM_Lead":"PM Lead",
+    "Estimating_Lead":"Estimating Lead",
+    "Value":"Value"
+  };
+
+  // Hide / ignore fields (not shown, not sent)
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
+
+  // Allowed Group/status06 labels on your board
   const allowedGroupLabels = ["SPC","ENG","MAJ"];
 
+  // Map incoming DOCX group/disciplines to your status labels
   function mapGroupToStatusLabel(v){
     if(!v) return null;
-    const s = String(v).trim();
-    if(allowedGroupLabels.includes(s)) return s;
-    const spcSet = new Set(["CSA","Mechanical","Electrical","Insulation","Fabrication","Telecom","Energy Management","Instrumentation","Piping","Civil","Structural"]);
-    if (spcSet.has(s)) return "SPC";
-    if (/^(Design|Engineering|ENG)$/i.test(s)) return "ENG";
-    if (/^(Major|MAJ)/i.test(s)) return "MAJ";
-    return null;
+    const s = String(v).trim().toLowerCase();
+    const SPCset = new Set(["csa","mechanical","electrical","insulation","fabrication","telecom","energy management","spc"]);
+    if (SPCset.has(s)) return "SPC";
+    if (s.startsWith("major")) return "MAJ";
+    if (s === "design" || s === "eng" || s === "engineering") return "ENG";
+    return null; // leave unmapped (user can choose)
   }
 
+  // ====== State ======
   let ctx=null, itemId=null, boardId=null;
-  let rawFields={}, editedFields={}, updates=null, pendingName=null;
+  let rawFields={}, editedFields={}, pendingName=null;
 
-  /* ===== Helpers ===== */
-  function setMsg(t){document.getElementById("msg").innerText=t||""}
+  // ====== Helpers ======
+  const $ = sel => document.querySelector(sel);
+  const setMsg = t => $("#msg").innerText = t || "";
   function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
-  function withTimeout(promise,ms,label){let t;const timeout=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(label+" timed out after "+ms+"ms")),ms)});return Promise.race([promise,timeout]).finally(()=>clearTimeout(t))}
+
   function normText(s){return (s||"").trim()}
-  function normDateToYMD(s){
-    if(!s) return "";
-    const d1 = new Date(s);
-    if(!isNaN(d1)) return d1.toISOString().slice(0,10);
-    const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  function normDate(s){
+    if(!s) return null;
+    // Accept "MM/DD/YY", "YYYY-MM-DD", etc. Output "YYYY-MM-DD"
+    const d=new Date(s);
+    if(!isNaN(d)) return d.toISOString().slice(0,10);
+    // try manual MM/DD/YY
+    const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if(m){
-      const mm = m[1].padStart(2,"0"), dd = m[2].padStart(2,"0");
-      let yyyy = m[3]; if(yyyy.length===2) yyyy = (Number(yyyy)<70 ? "20"+yyyy : "19"+yyyy);
-      return `${yyyy}-${mm}-${dd}`;
+      const y = m[3].length===2 ? ("20"+m[3]) : m[3];
+      const mm = String(m[1]).padStart(2,"0");
+      const dd = String(m[2]).padStart(2,"0");
+      return `${y}-${mm}-${dd}`;
     }
-    return "";
+    return null;
   }
   function parseTimeToHHMM(s){
     if(!s) return null;
     const str = String(s).trim();
     const m = str.match(/^(\d{1,2})(?::?(\d{2}))?\s*([AaPp][Mm])?$/);
-    if(!m){
-      const d=new Date("1970-01-01T"+str);
-      if(!isNaN(d)) return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
-      return null;
-    }
-    let hh=parseInt(m[1],10),mm=m[2]?parseInt(m[2],10):0,ap=m[3]?.toLowerCase?.();
+    if(!m){ const d=new Date("1970-01-01T"+str); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; return null; }
+    let hh=parseInt(m[1],10), mm=m[2]?parseInt(m[2],10):0, ap=m[3]?.toLowerCase();
     if(ap==="pm"&&hh<12) hh+=12; if(ap==="am"&&hh===12) hh=0;
     if(hh<0||hh>23||mm<0||mm>59) return null;
-    return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
+    return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
   }
 
+  function buildTitle(fields){
+    const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
+    const parts=[a,b,c].filter(Boolean);
+    return parts.length? parts.join(" ") : null;
+  }
+
+  // ====== DOCX unzip + simple SDT extraction ======
   async function parseDocxArrayBuffer(ab){
-    const zip=await withTimeout(JSZip.loadAsync(ab),10000,"Unzipping .docx");
-    const f=zip.file("word/document.xml");
+    const zip = await JSZip.loadAsync(ab);
+    const f = zip.file("word/document.xml");
     if(!f) throw new Error("word/document.xml not found (is this a valid .docx?)");
-    return await withTimeout(f.async("string"),8000,"Reading document.xml");
+    return await f.async("string");
   }
   function textFromNode(node){
-    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
-    let t="", curr; while((curr=walker.nextNode())) t += curr.nodeValue; return t;
+    const w = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+    let t="", n; while((n=w.nextNode())) t+=n.nodeValue; return t;
   }
-  function extractSdtWithDOM(documentXml){
-    const dom = new DOMParser().parseFromString(documentXml,"application/xml");
+  function extractSdtWithDOM(xml){
+    const dom = new DOMParser().parseFromString(xml,"application/xml");
     if(dom.getElementsByTagName("parsererror").length){throw new Error("XML parsererror in document.xml")}
     const all = dom.getElementsByTagName("*");
     const out = {};
@@ -208,212 +236,234 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  function buildTitle(fields){
-    const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
-    const parts=[a,b,c].filter(Boolean);
-    return parts.length? parts.join(" ") : null;
-  }
-
-  /* ===== Preview (no inline <script>) ===== */
+  // ====== Render Preview with friendly labels / controls ======
   function renderEditablePreview(fields){
-    const el=document.getElementById("preview");
+    const el = $("#preview");
 
-    // working copy excluding ignored
+    // Working copy
     editedFields = {};
-    Object.keys(fields||{}).forEach(k=>{ if(!IGNORED.has(k)) editedFields[k]=fields[k]; });
 
-    // computed
-    const dateYMD = normDateToYMD(editedFields.Due_Date);
-    const timeHM  = parseTimeToHHMM(editedFields.Due_Time);
-    const timeOn  = !!timeHM;
-    const hh = timeHM ? timeHM.split(":")[0] : "12";
-    const mm = timeHM ? timeHM.split(":")[1].padStart(2,"0") : "00";
-    const initialGroup = mapGroupToStatusLabel(editedFields.Group) || "";
-    editedFields.__GroupStatus = initialGroup;
-    if (!("PM_Lead" in editedFields)) editedFields.PM_Lead = "";
+    // Build in required order, excluding IGNORED and missing keys
+    const keys = FIELD_ORDER.filter(k => !IGNORED.has(k) && (k in fields || k==="PM_Lead")); // PM_Lead always shown
+    if(!keys.length){ el.classList.add("kv-empty"); el.innerHTML="No fields extracted yet."; return; }
+    el.classList.remove("kv-empty");
 
-    const hourOpts = Array.from({length:24},(_,h)=>`<option value="${String(h).padStart(2,"0")}">${String(h).padStart(2,"0")}</option>`).join("");
-    const minuteOpts = ["00","30"].map(m=>`<option value="${m}">${m}</option>`).join("");
+    // Seed defaults
+    keys.forEach(k=>{
+      if(k==="PM_Lead") editedFields[k] = ""; // new blank field
+      else editedFields[k] = fields[k] ?? "";
+    });
 
-    const friendlyOrder = [
-      ["ENumber","E Number"],
-      ["Name_Client","Client"],
-      ["Name_Project","Project"],
-      ["__GroupStatus","Group"],
-      ["Due_Date","Due Date"],
-      ["Due_Time","Due Time"],
-      ["Team_Lead","Assigned Lead"],
-      ["PM_Lead","PM Lead"],
-      ["Team_Est","Estimating Lead"],
-      ["Value","Value"]
-    ];
+    // Normalized date/time for controls
+    const normD = normDate(editedFields.Due_Date) || "";
+    const normT = parseTimeToHHMM(editedFields.Due_Time) || "";
 
-    const rowsHtml = friendlyOrder.map(([key,label])=>{
+    const rowsHtml = keys.map(key=>{
+      const label = LABELS[key] || key;
+
+      // Due Date
       if(key==="Due_Date"){
         return `
-          <div class="row">
-            <div class="key">${label}</div>
-            <div><input class="input" id="input-date" type="date" value="${dateYMD || ""}"></div>
-          </div>`;
-      }
-      if(key==="Due_Time"){
-        return `
-          <div class="row">
-            <div class="key">${label}</div>
-            <div class="timewrap">
-              <label class="toggle"><input type="checkbox" id="toggle-time"> Include time</label>
-              <select id="time-hour">${hourOpts}</select>
-              <select id="time-minute">${minuteOpts}</select>
-            </div>
-          </div>`;
-      }
-      if(key==="__GroupStatus"){
-        const opts = ['<option value=""></option>'].concat(allowedGroupLabels.map(l=>`<option value="${l}">${l}</option>`)).join("");
-        return `
-          <div class="row">
-            <div class="key">${label}</div>
-            <div><select id="group-status">${opts}</select></div>
-          </div>`;
-      }
-      const val = (editedFields[key]??"").toString().replace(/"/g,'&quot;');
-      return `
         <div class="row">
           <div class="key">${label}</div>
-          <div><input class="input" data-key="${key}" value="${val}"></div>
+          <div><input id="dueDate" type="date" class="date-input" value="${normD}" /></div>
         </div>`;
+      }
+
+      // Due Time + toggle
+      if(key==="Due_Time"){
+        const isOn = !!normT;
+        const hh = isOn ? normT.split(":")[0] : "";
+        const mm = isOn ? normT.split(":")[1] : "";
+        const hours = Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
+        const minutes = ["00","30"];
+
+        return `
+        <div class="row">
+          <div class="key">${label}</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label class="switch">
+              <input id="timeToggle" type="checkbox" ${isOn?"checked":""} />
+              <span>${isOn?"On":"Off"}</span>
+            </label>
+            <select id="timeHH" class="time-select" ${isOn?"":"disabled"}>
+              <option value="">HH</option>
+              ${hours.map(h=>`<option value="${h}" ${h===hh?"selected":""}>${h}</option>`).join("")}
+            </select>
+            <select id="timeMM" class="time-select" ${isOn?"":"disabled"}>
+              <option value="">MM</option>
+              ${minutes.map(m=>`<option value="${m}" ${m===mm?"selected":""}>${m}</option>`).join("")}
+            </select>
+          </div>
+        </div>`;
+      }
+
+      // Group -> status06 (restricted options)
+      if(key==="Group"){
+        const pre = mapGroupToStatusLabel(editedFields[key]) || "";
+        return `
+        <div class="row">
+          <div class="key">${label}</div>
+          <div>
+            <select id="groupSelect">
+              <option value="">— Select —</option>
+              ${allowedGroupLabels.map(l=>`<option value="${l}" ${l===pre?"selected":""}>${l}</option>`).join("")}
+            </select>
+          </div>
+        </div>`;
+      }
+
+      // Standard inputs
+      const val = (editedFields[key]??"").toString().replace(/"/g,"");
+      return `
+      <div class="row">
+        <div class="key">${label}</div>
+        <div><input class="input" data-key="${key}" value="${val}"></div>
+      </div>`;
     }).join("");
 
-    el.innerHTML = rowsHtml || "No fields extracted yet.";
-    el.classList.toggle("kv-empty", !rowsHtml);
+    el.innerHTML = rowsHtml;
 
-    // post-render defaults & wiring
-    const di = el.querySelector("#input-date");
-    if(di){ di.addEventListener("change", e=>{ editedFields.Due_Date = e.target.value; }); }
-
-    const tgl = el.querySelector("#toggle-time");
-    const th  = el.querySelector("#time-hour");
-    const tm  = el.querySelector("#time-minute");
-    if(tgl && th && tm){
-      const setEnabled = on => { th.disabled=!on; tm.disabled=!on; };
-      tgl.checked = timeOn; setEnabled(timeOn);
-      th.value = hh; tm.value = mm;
-      tgl.addEventListener("change", ()=> setEnabled(tgl.checked));
-    }
-
-    const gs = el.querySelector("#group-status");
-    if(gs){
-      gs.value = initialGroup || "";
-      gs.addEventListener("change", e=>{ editedFields.__GroupStatus = e.target.value || ""; });
-    }
-
+    // Wire generic text inputs
     el.querySelectorAll("input.input").forEach(inp=>{
       inp.addEventListener("input", e=>{
-        const key = e.target.getAttribute("data-key");
-        editedFields[key] = e.target.value;
+        const k = e.target.getAttribute("data-key");
+        editedFields[k] = e.target.value;
       });
     });
-  }
 
-  /* ===== Build updates ===== */
- async function buildUpdatesFromEdited(fields){
-  const vals = {};
-
-  pendingName = buildTitle(fields) || null;
-
-  // date/time from controls
-  const dateYMD = normDateToYMD(fields.Due_Date);
-  const th = document.getElementById("time-hour");
-  const tm = document.getElementById("time-minute");
-  const tgl = document.getElementById("toggle-time");
-
-  if (dateYMD){
-    if (tgl && tgl.checked && th && tm){
-      const hh = String(th.value || "00").padStart(2,"0");
-      const mm = String(tm.value || "00").padStart(2,"0");
-      vals["date6"] = { date: dateYMD, time: `${hh}:${mm}` };
-    } else {
-      vals["date6"] = { date: dateYMD };
+    // Date
+    const dueDateEl = $("#dueDate");
+    if(dueDateEl){
+      dueDateEl.addEventListener("input", e=>{
+        editedFields.Due_Date = e.target.value; // already yyyy-MM-dd
+      });
     }
-  }
 
-  // status06 from dropdown/mapper (send only if we have a valid mapped label)
-  const mapped = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
-  if (mapped && ["SPC","ENG","MAJ"].includes(mapped)){
-    vals["status06"] = { label: mapped };
-  }
-
-  // regular mapped fields
-  for (const k in mapping){
-    const m = mapping[k];
-    const v = fields[k];
-    if (v == null || v === "") continue;
-
-    if (m.type === "text"){
-      vals[m.columnId] = v;
-    } else if (m.type === "numbers"){
-      const n = Number(String(v).replace(/[^0-9.\-]/g,""));
-      if (!isNaN(n)) vals[m.columnId] = String(n);
+    // Time
+    const tToggle = $("#timeToggle");
+    const tHH = $("#timeHH");
+    const tMM = $("#timeMM");
+    function syncTimeEnabled(on){
+      tHH.disabled = !on; tMM.disabled = !on;
     }
-  }
-  return vals;
-}
-
-
- async function applyToMonday(vals){
-  // 1) Update columns — column_values must be JSON!, not String
-  const mutation = `
-    mutation($board_id: ID!, $item_id: ID!, $column_values: JSON!) {
-      change_multiple_column_values(
-        board_id: $board_id,
-        item_id:  $item_id,
-        column_values: $column_values
-      ) { id }
+    if(tToggle){
+      tToggle.addEventListener("change", e=>{
+        const on = e.target.checked;
+        syncTimeEnabled(on);
+        if(!on){ editedFields.Due_Time = ""; } else {
+          const hh = tHH.value || "00";
+          const mm = tMM.value || "00";
+          editedFields.Due_Time = `${hh}:${mm}`;
+        }
+        tToggle.nextElementSibling.textContent = on?"On":"Off";
+      });
     }
-  `;
-
-  const resp = await monday.api(mutation, {
-    variables: {
-      board_id: String(boardId),         // ID! wants a string
-      item_id:  String(itemId),          // ID! wants a string
-      column_values: vals                // <-- RAW OBJECT (do NOT JSON.stringify)
-    }
-  });
-
-  if (resp.errors && resp.errors.length){
-    console.error("monday errors:", resp.errors, "payload:", vals);
-    const msg = resp.errors.map(e => e.message).join("; ");
-    throw new Error("column_values: " + msg);
-  }
-
-  // 2) Name (unchanged)
-  if (pendingName){
-    const m2 = `mutation($item_id: ID!, $name: String!){
-      change_item_name(item_id:$item_id, name:$name){ id }
-    }`;
-    const r2 = await monday.api(m2, {
-      variables:{ item_id:String(itemId), name:pendingName }
+    [tHH,tMM].forEach(sel=>{
+      if(sel) sel.addEventListener("change", ()=>{
+        if(tToggle.checked){
+          const hh = tHH.value || "00";
+          const mm = tMM.value || "00";
+          editedFields.Due_Time = `${hh}:${mm}`;
+        }
+      });
     });
-    if (r2.errors && r2.errors.length){
-      console.error("name errors:", r2.errors);
-      throw new Error(r2.errors.map(e=>e.message).join("; "));
+
+    // Group select
+    const gSel = $("#groupSelect");
+    if(gSel){
+      gSel.addEventListener("change", e=>{
+        editedFields.__GroupStatus = e.target.value || "";
+      });
+      // seed internal field for later mapping
+      editedFields.__GroupStatus = gSel.value || "";
     }
   }
-}
 
+  async function buildColumnValuesFromEdited(fields){
+    const vals = {};
 
-  /* ===== Monday context/theme ===== */
+    // Title
+    pendingName = buildTitle(fields) || null;
+
+    // date6 (date + optional time)
+    const dateIso = normDate(fields.Due_Date);
+    const hhmm = parseTimeToHHMM(fields.Due_Time);
+    if(dateIso){
+      vals["date6"] = hhmm ? { date:dateIso, time:hhmm } : { date:dateIso };
+    }
+
+    // status06 (Group)
+    const chosen = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
+    if(chosen && allowedGroupLabels.includes(chosen)){
+      vals["status06"] = { label: chosen };
+    }
+
+    // Other mapped columns
+    for(const k in mapping){
+      const m = mapping[k];
+      const v = fields[k];
+      if(v==null || v==="") continue;
+      if(m.type==="text"){ vals[m.columnId] = v; }
+      else if(m.type==="numbers"){
+        const n = Number(String(v).replace(/[^0-9.\-]/g,""));
+        if(!isNaN(n)) vals[m.columnId] = String(n);
+      }
+    }
+    return vals;
+  }
+
+  // ====== Apply to Monday with JSON variable (fixes validation error) ======
+  async function applyToMonday(columnValues){
+    // 1) Change columns
+    const mutation = `
+      mutation($boardId:Int!,$itemId:Int!,$column_values:JSON!){
+        change_multiple_column_values(board_id:$boardId,item_id:$itemId,column_values:$column_values){ id }
+      }`;
+    const res = await monday.api(mutation, {
+      variables:{
+        boardId: Number(boardId),
+        itemId: Number(itemId),
+        column_values: columnValues  // pass object, not string
+      }
+    });
+    if(res.errors && res.errors.length){
+      throw new Error(res.errors.map(e=>e.message).join("; "));
+    }
+
+    // 2) Update name if needed
+    if(pendingName){
+      // try change_simple_column_value first
+      const m2 = `mutation($itemId:Int!,$val:String!){
+        change_simple_column_value(item_id:$itemId,column_id:"name",value:$val){ id }
+      }`;
+      const r2 = await monday.api(m2,{ variables:{ itemId:Number(itemId), val: JSON.stringify(pendingName) }});
+      if(r2.errors && r2.errors.length){
+        // fallback
+        const m3 = `mutation($itemId:Int!,$name:String!){
+          change_item_name(item_id:$itemId,name:$name){ id }
+        }`;
+        const r3 = await monday.api(m3,{ variables:{ itemId:Number(itemId), name: pendingName }});
+        if(r3.errors && r3.errors.length){
+          throw new Error("change_item_name: " + r3.errors.map(e=>e.message).join("; "));
+        }
+      }
+    }
+  }
+
+  // ====== Monday context/theme ======
   monday.listen("context",(res)=>{
     ctx=res.data||{}; itemId=ctx.itemId; boardId=ctx.boardId;
-    document.getElementById("ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`;
+    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`
   });
   monday.listen("theme",(res)=>{
     const theme=res.data?.theme||"auto";
-    document.getElementById("theme-pill").innerText=`Theme: ${theme}`;
+    $("#theme-pill").innerText=`Theme: ${theme}`;
   });
 
-  /* ===== UI bindings ===== */
-  const dz=document.getElementById("dropzone"), fi=document.getElementById("fileinput");
-  document.getElementById("choose").onclick=()=>fi.click();
+  // ====== UI events ======
+  const dz = $("#dropzone"), fi = $("#fileinput");
+  $("#choose").onclick=()=>fi.click();
   fi.addEventListener("change",e=>{
     const f=e.target.files?.[0];
     if(f && /\.docx$/i.test(f.name)) handleLocalFile(f); else setMsg("Please choose a .docx");
@@ -421,47 +471,54 @@ document.addEventListener("DOMContentLoaded", () => {
   dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("k")});
   dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("k")});
   dz.addEventListener("drop",e=>{
-    e.preventDefault();dz.classList.remove("k");
+    e.preventDefault(); dz.classList.remove("k");
     const f=e.dataTransfer.files?.[0];
-    if(!f){setMsg("No file dropped");return}
-    if(!/\.docx$/i.test(f.name)){setMsg("Please drop a .docx file");return}
+    if(!f) return setMsg("No file dropped");
+    if(!/\.docx$/i.test(f.name)) return setMsg("Please drop a .docx file");
     handleLocalFile(f);
   });
 
-  document.getElementById("apply").onclick=async()=>{
+  $("#apply").onclick = async () => {
     try{
-      if(!editedFields || Object.keys(editedFields).length===0){ setMsg("Nothing to apply"); return }
+      if(!editedFields || Object.keys(editedFields).length===0) return setMsg("Nothing to apply");
       setMsg("Building updates…");
+
+      // Remove ignored keys from working view
       const working = {};
-      Object.keys(editedFields).forEach(k=>{ if(!IGNORED.has(k)) working[k] = editedFields[k]; });
-      updates = await buildUpdatesFromEdited(working);
-      if(Object.keys(updates).length===0 && !buildTitle(working)){ setMsg("Nothing mappable found"); return; }
+      Object.keys(editedFields).forEach(k=>{ if(!IGNORED.has(k)) working[k]=editedFields[k]; });
+
+      const columnValues = await buildColumnValuesFromEdited(working);
+      if(Object.keys(columnValues).length===0 && !buildTitle(working)){
+        return setMsg("Nothing mappable found");
+      }
       setMsg("Updating item…");
-      await applyToMonday(updates);
+      await applyToMonday(columnValues);
       setMsg("Done");
-    }catch(e){ showErr(e, "Update failed"); }
+    }catch(e){ showErr(e,"Update failed"); }
   };
 
   async function handleLocalFile(file){
     try{
       setMsg(`Reading local .docx… (${(file.size/1024/1024).toFixed(2)} MB)`);
-      const ab=await withTimeout(file.arrayBuffer(),8000,"Loading file");
-      const xml=await parseDocxArrayBuffer(ab);
+      const ab = await file.arrayBuffer();
+      const xml = await parseDocxArrayBuffer(ab);
       setMsg("Parsing fields…");
       rawFields = extractSdtWithDOM(xml);
 
-      const filtered = {};
-      Object.keys(rawFields).forEach(k=>{ if(!IGNORED.has(k)) filtered[k]=rawFields[k]; });
+      // Rename incoming keys to our UI keys if needed
+      const view = {};
+      FIELD_ORDER.forEach(k=>{
+        if(k==="PM_Lead"){ view[k]=""; return; } // always present blank
+        if(k in rawFields) view[k] = rawFields[k];
+      });
 
-      renderEditablePreview(filtered);
-
-      const hasAny = Object.keys(filtered).length>0;
-      document.getElementById("apply").disabled = !hasAny;
-      setMsg(hasAny? "Ready to apply" : "Nothing mappable found");
-    }catch(e){ showErr(e,"Could not read .docx") }
+      renderEditablePreview(view);
+      $("#apply").disabled = false;
+      setMsg("Ready to apply");
+    }catch(e){ showErr(e,"Could not read .docx"); }
   }
 
-  window.addEventListener("error", (e)=> showErr(e.error||e.message, "Script error"));
+  window.addEventListener("error",(e)=>showErr(e.error||e.message,"Script error"));
 });
 </script>
 </body>
