@@ -372,45 +372,47 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function applyToMonday(columnValues){
-    const mutation = `
-      mutation($boardId:Int!,$itemId:Int!,$column_values:JSON!){
-        change_multiple_column_values(board_id:$boardId,item_id:$itemId,column_values:$column_values){ id }
-      }`;
-    const res = await monday.api(mutation, {
-      variables:{
-        boardId: Number(boardId),
-        itemId: Number(itemId),
-        column_values: JSON.stringify(columnValues)
-      }
-    });
-    if(res.errors && res.errors.length){
-      throw new Error(res.errors.map(e=>e.message).join("; "));
+  const mutation = `
+    mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
+      change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
+    }`;
+  const res = await monday.api(mutation, {
+    variables:{
+      boardId,               // already a string from the context listener
+      itemId,                // already a string from the context listener
+      column_values: JSON.stringify(columnValues) // JSON scalar must be a string
     }
-    if(pendingName){
-      const m2 = `mutation($itemId:Int!,$val:String!){
-        change_simple_column_value(item_id:$itemId,column_id:"name",value:$val){ id }
+  });
+  if(res.errors && res.errors.length){
+    throw new Error(res.errors.map(e=>e.message).join("; "));
+  }
+
+  if(pendingName){
+    // value for name is a plain String
+    const m2 = `mutation($itemId: ID!, $val: String!){
+      change_simple_column_value(item_id:$itemId, column_id:"name", value:$val){ id }
+    }`;
+    const r2 = await monday.api(m2,{ variables:{ itemId, val: pendingName }});
+    if(r2.errors && r2.errors.length){
+      const m3 = `mutation($itemId: ID!, $name: String!){
+        change_item_name(item_id:$itemId, name:$name){ id }
       }`;
-      const r2 = await monday.api(m2,{ variables:{ itemId:Number(itemId), val: pendingName }});
-      if(r2.errors && r2.errors.length){
-        const m3 = `mutation($itemId:Int!,$name:String!){
-          change_item_name(item_id:$itemId,name:$name){ id }
-        }`;
-        const r3 = await monday.api(m3,{ variables:{ itemId:Number(itemId), name: pendingName }});
-        if(r3.errors && r3.errors.length){
-          throw new Error("change_item_name: " + r3.errors.map(e=>e.message).join("; "));
-        }
+      const r3 = await monday.api(m3,{ variables:{ itemId, name: pendingName }});
+      if(r3.errors && r3.errors.length){
+        throw new Error("change_item_name: " + r3.errors.map(e=>e.message).join("; "));
       }
     }
   }
+}
 
   monday.listen("context",(res)=>{
-    ctx=res.data||{}; itemId=ctx.itemId; boardId=ctx.boardId;
-    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`
-  });
-  monday.listen("theme",(res)=>{
-    const theme=res.data?.theme||"auto";
-    $("#theme-pill").innerText=`Theme: ${theme}`;
-  });
+  const c = res.data || {};
+  // force to string since GraphQL wants ID
+  itemId = c.itemId != null ? String(c.itemId) : null;
+  boardId = c.boardId != null ? String(c.boardId) : null;
+  $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`
+});
+
 
   const dz = $("#dropzone"), fi = $("#fileinput");
   $("#choose").onclick=()=>fi.click();
