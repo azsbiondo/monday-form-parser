@@ -360,9 +360,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
  async function applyToMonday(vals){
-  // 1) columns
+  // 1) Update columns — column_values must be JSON!, not String
   const mutation = `
-    mutation($board_id: ID!, $item_id: ID!, $column_values: String!) {
+    mutation($board_id: ID!, $item_id: ID!, $column_values: JSON!) {
       change_multiple_column_values(
         board_id: $board_id,
         item_id:  $item_id,
@@ -373,25 +373,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const resp = await monday.api(mutation, {
     variables: {
-      board_id: String(boardId),
-      item_id:  String(itemId),
-      column_values: JSON.stringify(vals) // <= string payload (works across tenants)
+      board_id: String(boardId),         // ID! wants a string
+      item_id:  String(itemId),          // ID! wants a string
+      column_values: vals                // <-- RAW OBJECT (do NOT JSON.stringify)
     }
   });
 
   if (resp.errors && resp.errors.length){
-    // surface full details
     console.error("monday errors:", resp.errors, "payload:", vals);
     const msg = resp.errors.map(e => e.message).join("; ");
     throw new Error("column_values: " + msg);
   }
 
-  // 2) item name (only if we have one)
+  // 2) Name (unchanged)
   if (pendingName){
     const m2 = `mutation($item_id: ID!, $name: String!){
       change_item_name(item_id:$item_id, name:$name){ id }
     }`;
-    const r2 = await monday.api(m2, { variables:{ item_id:String(itemId), name:pendingName } });
+    const r2 = await monday.api(m2, {
+      variables:{ item_id:String(itemId), name:pendingName }
+    });
     if (r2.errors && r2.errors.length){
       console.error("name errors:", r2.errors);
       throw new Error(r2.errors.map(e=>e.message).join("; "));
