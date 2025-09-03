@@ -110,14 +110,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Column mapping
   const mapping = {
-    "Value":          { type:"numbers", columnId:"numeric_mkq0534" },
-    "Assigned_Lead":  { type:"text",    columnId:"executive___ops_2" },
-    "Lead":           { type:"text",    columnId:"executive___ops_2" }, // overrides Assigned_Lead if present
-    "PM":             { type:"text",    columnId:"text0" },
-    "EST":            { type:"text",    columnId:"text8" }
+    "Value":         { type:"numbers", columnId:"numeric_mkq0534" },
+    "Assigned_Lead": { type:"text",    columnId:"executive___ops_2" },
+    "Lead":          { type:"text",    columnId:"executive___ops_2" }, // overrides Assigned_Lead if present
+    "PM":            { type:"text",    columnId:"text0" },
+    "EST":           { type:"text",    columnId:"text8" }
   };
 
-  // UI order (Lead/PM/EST appear after Value)
+  // UI order (Lead/PM/EST after Value)
   const FIELD_ORDER = [
     "ENumber","Name_Client","Name_Project",
     "Due_Date","Due_Time","Group",
@@ -138,10 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "EST":"EST"
   };
 
-  // Ignore these incoming tags
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
-
-  // Allowed status labels for Group mapping
   const allowedGroupLabels = ["SPC","ENG","MAJ"];
 
   function mapGroupToStatusLabel(v){
@@ -348,32 +345,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Check if Date column has "Show time"
-  async function isDateColumnTimeEnabled(bid, colId){
-    const q = `query($bid:[ID!],$cid:[String!]){
-      boards(ids:$bid){ columns(ids:$cid){ id settings_str } }
-    }`;
-    const r = await monday.api(q, { variables:{ bid:[bid], cid:[colId] }});
-    const s = r?.data?.boards?.[0]?.columns?.[0]?.settings_str;
-    try { return !!(s && JSON.parse(s).time); } catch { return false; }
-  }
-
-  // Build GraphQL payload
+  // Build GraphQL payload (now uses fields.EST if present)
   async function buildColumnValuesFromEdited(fields){
     const vals = {};
 
     // Title
     pendingName = buildTitle(fields) || null;
 
-    // Date (with time only if column supports it)
+    // Date — always include time if provided; we’ll retry without time if Monday rejects it
     const dateIso = normDate(fields.Due_Date);
-    const hhmm = parseTimeToHHMM(fields.Due_Time); // already 24h
+    const hhmm = parseTimeToHHMM(fields.Due_Time);
     if(dateIso){
-      let withTime = false;
-      if(hhmm){
-        try { withTime = await isDateColumnTimeEnabled(boardId, "date6"); } catch { withTime = false; }
-      }
-      vals["date6"] = withTime ? { date:dateIso, time:hhmm } : { date:dateIso };
+      vals["date6"] = hhmm ? { date:dateIso, time:hhmm } : { date:dateIso };
     }
 
     // Group (Status)
@@ -387,19 +370,21 @@ document.addEventListener("DOMContentLoaded", () => {
       const m = mapping[k];
       let v = fields[k];
 
-      // EST: join Team_Est1..4, skipping blanks and literal "name"
+      // EST: prefer the already-joined UI value; rebuild only if blank
       if(k==="EST"){
-        const arr = [fields.Team_Est1,fields.Team_Est2,fields.Team_Est3,fields.Team_Est4]
-          .filter(x => x && String(x).trim()!=="" && !isPlaceholderName(x))
-          .map(x => String(x).trim());
-        v = arr.length ? arr.join(" / ") : "";
+        if(!v){
+          const arr = [fields.Team_Est1,fields.Team_Est2,fields.Team_Est3,fields.Team_Est4]
+            .filter(x => x && String(x).trim()!=="" && !isPlaceholderName(x))
+            .map(x => String(x).trim());
+          v = arr.length ? arr.join(" / ") : "";
+        }
       }
 
-      // PM: prefer Team_PM else Team_Lead; skip placeholders
-      if(k==="PM"){
+      // PM: prefer Team_PM else Team_Lead; skip placeholders (only if UI field empty)
+      if(k==="PM" && !v){
         const pmRaw = (fields.Team_PM && !isPlaceholderName(fields.Team_PM)) ? fields.Team_PM
                     : ((fields.Team_Lead && !isPlaceholderName(fields.Team_Lead)) ? fields.Team_Lead : "");
-        v = pmRaw || v || "";
+        v = pmRaw || "";
       }
 
       // Lead: take provided Lead if present
@@ -430,21 +415,40 @@ document.addEventListener("DOMContentLoaded", () => {
     return vals;
   }
 
-  // Mutations
+  // Mutations (with date-time retry fallback)
   async function applyToMonday(columnValues){
-    // 1) Change columns
-    const mutation = `
-      mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
-        change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
-      }`;
-    const res = await monday.api(mutation, {
-      variables:{ boardId, itemId, column_values: JSON.stringify(columnValues) }
-    });
+    const send = async (cols) => {
+      const mutation = `
+        mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
+          change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
+        }`;
+      return monday.api(mutation, {
+        variables:{ boardId, itemId, column_values: JSON.stringify(cols) }
+      });
+    };
+
+    // First attempt (possibly with time)
+    let res = await send(columnValues);
+
+    // If Monday complains (often due to time on Date), try stripping time and retry once
+    if(res.errors && res.errors.length){
+      const msg = res.errors.map(e=>e.message).join("; ");
+      const hadTime = columnValues.date6 && columnValues.date6.time;
+      const looksLikeDateValueIssue =
+        /invalid value/i.test(msg) || /ColumnValueException/i.test(msg);
+
+      if(hadTime && looksLikeDateValueIssue){
+        const retryCols = { ...columnValues, date6: { date: columnValues.date6.date } };
+        setMsg("Date time not accepted by column settings; retrying with date only…");
+        res = await send(retryCols);
+      }
+    }
+
     if(res.errors && res.errors.length){
       throw new Error(res.errors.map(e=>e.message).join("; "));
     }
 
-    // 2) Rename via name column (requires board_id)
+    // Rename via name column (requires board_id)
     if(pendingName){
       const m2 = `mutation($boardId: ID!, $itemId: ID!, $val: String!){
         change_simple_column_value(board_id:$boardId, item_id:$itemId, column_id:"name", value:$val){ id }
