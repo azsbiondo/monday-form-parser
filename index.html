@@ -315,72 +315,90 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ===== Build updates ===== */
-  async function buildUpdatesFromEdited(fields){
-    const vals={};
+ async function buildUpdatesFromEdited(fields){
+  const vals = {};
 
-    pendingName = buildTitle(fields) || null;
+  pendingName = buildTitle(fields) || null;
 
-    // date/time from controls
-    const dateYMD = normDateToYMD(fields.Due_Date);
-    const th = document.getElementById("time-hour");
-    const tm = document.getElementById("time-minute");
-    const tgl = document.getElementById("toggle-time");
-    if(dateYMD){
-      if(tgl && tgl.checked && th && tm){
-        vals["date6"] = { date:dateYMD, time:`${th.value}:${tm.value}` };
-      }else{
-        vals["date6"] = { date:dateYMD };
-      }
-    }
+  // date/time from controls
+  const dateYMD = normDateToYMD(fields.Due_Date);
+  const th = document.getElementById("time-hour");
+  const tm = document.getElementById("time-minute");
+  const tgl = document.getElementById("toggle-time");
 
-    // status06 from dropdown/mapper
-    let label = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
-    if(label && allowedGroupLabels.includes(label)){
-      vals["status06"] = { label };
-    }
-
-    // regular mapped fields
-    for(const k in mapping){
-      const m=mapping[k]; const v=fields[k];
-      if(v==null || v==="") continue;
-      if(m.type==="text"){ vals[m.columnId]=v; }
-      else if(m.type==="numbers"){
-        const n=Number(String(v).replace(/[^0-9.\-]/g,""));
-        if(!isNaN(n)) vals[m.columnId]=String(n);
-      }
-    }
-    return vals;
-  }
-
-  /* ===== Apply with JSON! variable ===== */
-  async function applyToMonday(vals){
-    const mutation = `
-      mutation($board_id: ID!, $item_id: ID!, $column_values: JSON!) {
-        change_multiple_column_values(board_id:$board_id, item_id:$item_id, column_values:$column_values) { id }
-      }
-    `;
-    const resp = await monday.api(mutation, {
-      variables: {
-        board_id: String(boardId),
-        item_id:  String(itemId),
-        column_values: vals
-      }
-    });
-    if (resp.errors && resp.errors.length){
-      const msg = resp.errors.map(e => e.message).join("; ");
-      throw new Error("column_values: " + msg);
-    }
-
-    if(pendingName){
-      const m2 = `mutation($item_id: ID!, $name: String!){
-        change_item_name(item_id:$item_id, name:$name){ id }
-      }`;
-      const r2 = await monday.api(m2, { variables:{ item_id:String(itemId), name:pendingName } });
-      if (r2.errors && r2.errors.length){
-        throw new Error(r2.errors.map(e=>e.message).join("; "));
-      }
+  if (dateYMD){
+    if (tgl && tgl.checked && th && tm){
+      const hh = String(th.value || "00").padStart(2,"0");
+      const mm = String(tm.value || "00").padStart(2,"0");
+      vals["date6"] = { date: dateYMD, time: `${hh}:${mm}` };
+    } else {
+      vals["date6"] = { date: dateYMD };
     }
   }
+
+  // status06 from dropdown/mapper (send only if we have a valid mapped label)
+  const mapped = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
+  if (mapped && ["SPC","ENG","MAJ"].includes(mapped)){
+    vals["status06"] = { label: mapped };
+  }
+
+  // regular mapped fields
+  for (const k in mapping){
+    const m = mapping[k];
+    const v = fields[k];
+    if (v == null || v === "") continue;
+
+    if (m.type === "text"){
+      vals[m.columnId] = v;
+    } else if (m.type === "numbers"){
+      const n = Number(String(v).replace(/[^0-9.\-]/g,""));
+      if (!isNaN(n)) vals[m.columnId] = String(n);
+    }
+  }
+  return vals;
+}
+
+
+ async function applyToMonday(vals){
+  // 1) columns
+  const mutation = `
+    mutation($board_id: ID!, $item_id: ID!, $column_values: String!) {
+      change_multiple_column_values(
+        board_id: $board_id,
+        item_id:  $item_id,
+        column_values: $column_values
+      ) { id }
+    }
+  `;
+
+  const resp = await monday.api(mutation, {
+    variables: {
+      board_id: String(boardId),
+      item_id:  String(itemId),
+      column_values: JSON.stringify(vals) // <= string payload (works across tenants)
+    }
+  });
+
+  if (resp.errors && resp.errors.length){
+    // surface full details
+    console.error("monday errors:", resp.errors, "payload:", vals);
+    const msg = resp.errors.map(e => e.message).join("; ");
+    throw new Error("column_values: " + msg);
+  }
+
+  // 2) item name (only if we have one)
+  if (pendingName){
+    const m2 = `mutation($item_id: ID!, $name: String!){
+      change_item_name(item_id:$item_id, name:$name){ id }
+    }`;
+    const r2 = await monday.api(m2, { variables:{ item_id:String(itemId), name:pendingName } });
+    if (r2.errors && r2.errors.length){
+      console.error("name errors:", r2.errors);
+      throw new Error(r2.errors.map(e=>e.message).join("; "));
+    }
+  }
+}
+
 
   /* ===== Monday context/theme ===== */
   monday.listen("context",(res)=>{
