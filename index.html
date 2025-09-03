@@ -149,7 +149,11 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  let ctx=null, itemId=null, boardId=null;
+  function isPlaceholderName(v){
+    return v && String(v).trim().toLowerCase() === "name";
+  }
+
+  let itemId=null, boardId=null;
   let rawFields={}, editedFields={}, pendingName=null;
 
   const $ = sel => document.querySelector(sel);
@@ -370,11 +374,29 @@ document.addEventListener("DOMContentLoaded", () => {
     for(const k of Object.keys(mapping)){
       const m = mapping[k];
       let v = fields[k];
+
       if(k==="EST"){
-        const parts = [fields.Team_Est1,fields.Team_Est2,fields.Team_Est3,fields.Team_Est4].filter(x=>x&&String(x).trim()!=="").map(x=>String(x).trim());
-        if(parts.length) v = parts.join(" / ");
+        const arr = [
+          fields.Team_Est1, fields.Team_Est2, fields.Team_Est3, fields.Team_Est4
+        ].filter(x=>x && String(x).trim()!=="" && !isPlaceholderName(x))
+         .map(x=>String(x).trim());
+        if(arr.length) v = arr.join(" / "); else v = "";
       }
-      if(k==="Lead" && fields.Lead) v = fields.Lead;
+
+      if(k==="PM"){
+        const pmRaw = fields.Team_PM && !isPlaceholderName(fields.Team_PM) ? fields.Team_PM
+                     : (fields.Team_Lead && !isPlaceholderName(fields.Team_Lead) ? fields.Team_Lead : "");
+        v = pmRaw || v || "";
+      }
+
+      if(k==="Lead"){
+        v = fields.Lead || v || "";
+      }
+
+      if(k==="Assigned_Lead" && fields.Lead){
+        continue; /* Lead overrides Assigned_Lead target column */
+      }
+
       if(v==null || v==="") continue;
       if(m.type==="text"){ vals[m.columnId] = v; }
       else if(m.type==="numbers"){
@@ -382,7 +404,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if(!isNaN(n)) vals[m.columnId] = String(n);
       }
     }
-    if(fields.Lead && mapping.Lead){ vals[mapping.Lead.columnId] = fields.Lead; }
+
+    if(fields.Lead && mapping.Lead){
+      vals[mapping.Lead.columnId] = fields.Lead;
+    }
     return vals;
   }
 
@@ -392,28 +417,18 @@ document.addEventListener("DOMContentLoaded", () => {
         change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
       }`;
     const res = await monday.api(mutation, {
-      variables:{
-        boardId,
-        itemId,
-        column_values: JSON.stringify(columnValues)
-      }
+      variables:{ boardId, itemId, column_values: JSON.stringify(columnValues) }
     });
     if(res.errors && res.errors.length){
       throw new Error(res.errors.map(e=>e.message).join("; "));
     }
     if(pendingName){
-      const m2 = `mutation($itemId: ID!, $val: String!){
-        change_simple_column_value(item_id:$itemId, column_id:"name", value:$val){ id }
+      const m = `mutation($itemId: ID!, $name: String!){
+        change_item_name(item_id:$itemId, name:$name){ id }
       }`;
-      const r2 = await monday.api(m2,{ variables:{ itemId, val: pendingName }});
-      if(r2.errors && r2.errors.length){
-        const m3 = `mutation($itemId: ID!, $name: String!){
-          change_item_name(item_id:$itemId, name:$name){ id }
-        }`;
-        const r3 = await monday.api(m3,{ variables:{ itemId, name: pendingName }});
-        if(r3.errors && r3.errors.length){
-          throw new Error("change_item_name: " + r3.errors.map(e=>e.message).join("; "));
-        }
+      const r = await monday.api(m,{ variables:{ itemId, name: pendingName }});
+      if(r.errors && r.errors.length){
+        throw new Error(r.errors.map(e=>e.message).join("; "));
       }
     }
   }
@@ -468,14 +483,21 @@ document.addEventListener("DOMContentLoaded", () => {
       const xml = await parseDocxArrayBuffer(ab);
       setMsg("Parsing fields…");
       rawFields = extractSdtWithDOM(xml);
+
       const view = {};
-      FIELD_ORDER.forEach(k=>{
-        if(k in rawFields) view[k] = rawFields[k];
-      });
+      FIELD_ORDER.forEach(k=>{ if(k in rawFields) view[k] = rawFields[k]; });
+
       if(rawFields.Team_Final) view.Lead = rawFields.Team_Final;
-      if(rawFields.Team_Lead) view.PM = rawFields.Team_Lead;
-      const estParts = [rawFields.Team_Est1,rawFields.Team_Est2,rawFields.Team_Est3,rawFields.Team_Est4].filter(x=>x&&String(x).trim()!=="").map(x=>String(x).trim());
-      if(estParts.length) view.EST = estParts.join(" / ");
+
+      const pmPref = (rawFields.Team_PM && !isPlaceholderName(rawFields.Team_PM)) ? rawFields.Team_PM
+                   : ((rawFields.Team_Lead && !isPlaceholderName(rawFields.Team_Lead)) ? rawFields.Team_Lead : "");
+      view.PM = pmPref || "";
+
+      const estParts = [rawFields.Team_Est1,rawFields.Team_Est2,rawFields.Team_Est3,rawFields.Team_Est4]
+        .filter(x=>x && String(x).trim()!=="" && !isPlaceholderName(x))
+        .map(x=>String(x).trim());
+      view.EST = estParts.length ? estParts.join(" / ") : "";
+
       renderEditablePreview(view);
       $("#apply").disabled = false;
       setMsg("Ready to apply");
