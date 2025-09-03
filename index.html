@@ -416,33 +416,64 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Mutations (with date-time retry fallback)
-  async function applyToMonday(columnValues){
-    const send = async (cols) => {
-      const mutation = `
-        mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
-          change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
-        }`;
-      return monday.api(mutation, {
+async function applyToMonday(columnValues){
+  // helper: call mutation and normalize both throw-style and return-style errors
+  const sendOnce = async (cols) => {
+    const mutation = `
+      mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
+        change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
+      }`;
+    try {
+      const res = await monday.api(mutation, {
         variables:{ boardId, itemId, column_values: JSON.stringify(cols) }
       });
-    };
-
-    // First attempt (possibly with time)
-    let res = await send(columnValues);
-
-    // If Monday complains (often due to time on Date), try stripping time and retry once
-    if(res.errors && res.errors.length){
-      const msg = res.errors.map(e=>e.message).join("; ");
-      const hadTime = columnValues.date6 && columnValues.date6.time;
-      const looksLikeDateValueIssue =
-        /invalid value/i.test(msg) || /ColumnValueException/i.test(msg);
-
-      if(hadTime && looksLikeDateValueIssue){
-        const retryCols = { ...columnValues, date6: { date: columnValues.date6.date } };
-        setMsg("Date time not accepted by column settings; retrying with date only…");
-        res = await send(retryCols);
+      if (res?.errors?.length) {
+        return { ok:false, err:res.errors, data:res };
       }
+      return { ok:true, err:null, data:res };
+    } catch (e) {
+      // SDK threw; try to pull GraphQL errors if present
+      const errList = e?.errors || e?.data?.errors || [{ message: e?.message || "Unknown error" }];
+      return { ok:false, err:errList, data:null };
     }
+  };
+
+  const isDateValueError = (errs) => {
+    const txt = JSON.stringify(errs||[]);
+    return /ColumnValueException/i.test(txt) || /invalid value/i.test(txt) && /"column_type":"date"/i.test(txt);
+  };
+
+  // 1) First attempt — possibly includes time
+  let attemptCols = columnValues;
+  let r = await sendOnce(attemptCols);
+
+  // 2) If it failed *and* looks like a date-with-time rejection, retry once with date-only
+  if (!r.ok && isDateValueError(r.err)) {
+    if (attemptCols.date6 && attemptCols.date6.date) {
+      const retryCols = { ...attemptCols, date6: { date: attemptCols.date6.date } };
+      console.warn("Date column rejected time; retrying with date only…", retryCols.date6);
+      setMsg("Date time not accepted by column settings; retrying with date only…");
+      r = await sendOnce(retryCols);
+    }
+  }
+
+  if (!r.ok) {
+    // still failing → surface the real error(s)
+    const msg = (r.err||[]).map(e => e.message || String(e)).join("; ");
+    throw new Error(msg || "GraphQL error");
+  }
+
+  // 3) Rename via name column (requires board_id)
+  if (pendingName){
+    const m2 = `mutation($boardId: ID!, $itemId: ID!, $val: String!){
+      change_simple_column_value(board_id:$boardId, item_id:$itemId, column_id:"name", value:$val){ id }
+    }`;
+    const r2 = await monday.api(m2,{ variables:{ boardId, itemId, val: pendingName }});
+    if(r2.errors && r2.errors.length){
+      throw new Error(r2.errors.map(e=>e.message).join("; "));
+    }
+  }
+}
 
     if(res.errors && res.errors.length){
       throw new Error(res.errors.map(e=>e.message).join("; "));
