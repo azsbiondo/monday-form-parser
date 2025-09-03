@@ -29,7 +29,7 @@ body{
     var(--bg);
   color:var(--text)
 }
-.container{max-width:860px;margin:18px auto;padding:0 14px} /* narrower so no horizontal scroll in Monday */
+.container{max-width:860px;margin:18px auto;padding:0 14px}
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .title{font-size:18px;font-weight:800;letter-spacing:.2px;display:flex;gap:10px;align-items:center}
 .badge{font-size:12px;padding:4px 8px;border-radius:999px;background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff}
@@ -57,7 +57,7 @@ body{
   background:var(--ctl-bg);color:var(--ctl-text);appearance:none;outline:none;
 }
 select:focus, .input:focus, .date-input:focus, .time-select:focus{box-shadow:0 0 0 2px rgba(36,70,142,.35)}
-select option{color:var(--text);background:var(--bg)} /* readable options in both themes */
+select option{color:var(--text);background:var(--bg)}
 .switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
 .switch input{appearance:none;width:38px;height:22px;border-radius:999px;background:var(--ctl-border);position:relative;outline:none;cursor:pointer;transition:background .2s ease}
 .switch input:checked{background:linear-gradient(135deg,var(--accent-2),var(--accent))}
@@ -108,21 +108,20 @@ select option{color:var(--text);background:var(--bg)} /* readable options in bot
 document.addEventListener("DOMContentLoaded", () => {
   const monday = mondaySdk();
 
-  // ===== Mapping for columns you asked to send =====
   const mapping = {
-    "Value":        { type:"numbers", columnId:"numeric_mkq0534" },
-    "Assigned_Lead":{ type:"text",    columnId:"executive___ops_2" }, // (Team Lead → Assigned Lead)
-    "PM_Lead":      { type:"text",    columnId:"text0" },             // new blank field
-    "Estimating_Lead":{type:"text",   columnId:"text8" }              // (Team Est → Estimating Lead)
+    "Value": { type:"numbers", columnId:"numeric_mkq0534" },
+    "Assigned_Lead": { type:"text", columnId:"executive___ops_2" },
+    "Lead": { type:"text", columnId:"executive___ops_2" },
+    "PM": { type:"text", columnId:"text0" },
+    "EST": { type:"text", columnId:"text8" }
   };
 
-  // Friendly labels & order for Preview & Modify
   const FIELD_ORDER = [
     "ENumber","Name_Client","Name_Project",
     "Due_Date","Due_Time","Group",
-    "Assigned_Lead","PM_Lead","Estimating_Lead",
-    "Value"
+    "Assigned_Lead","Value","Lead","PM","EST"
   ];
+
   const LABELS = {
     "ENumber":"E Number",
     "Name_Client":"Client",
@@ -131,18 +130,16 @@ document.addEventListener("DOMContentLoaded", () => {
     "Due_Time":"Due time",
     "Group":"Group",
     "Assigned_Lead":"Assigned Lead",
-    "PM_Lead":"PM Lead",
-    "Estimating_Lead":"Estimating Lead",
-    "Value":"Value"
+    "Value":"Value",
+    "Lead":"Lead",
+    "PM":"PM",
+    "EST":"EST"
   };
 
-  // Hide / ignore fields (not shown, not sent)
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
 
-  // Allowed Group/status06 labels on your board
   const allowedGroupLabels = ["SPC","ENG","MAJ"];
 
-  // Map incoming DOCX group/disciplines to your status labels
   function mapGroupToStatusLabel(v){
     if(!v) return null;
     const s = String(v).trim().toLowerCase();
@@ -150,14 +147,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (SPCset.has(s)) return "SPC";
     if (s.startsWith("major")) return "MAJ";
     if (s === "design" || s === "eng" || s === "engineering") return "ENG";
-    return null; // leave unmapped (user can choose)
+    return null;
   }
 
-  // ====== State ======
   let ctx=null, itemId=null, boardId=null;
   let rawFields={}, editedFields={}, pendingName=null;
 
-  // ====== Helpers ======
   const $ = sel => document.querySelector(sel);
   const setMsg = t => $("#msg").innerText = t || "";
   function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
@@ -165,10 +160,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function normText(s){return (s||"").trim()}
   function normDate(s){
     if(!s) return null;
-    // Accept "MM/DD/YY", "YYYY-MM-DD", etc. Output "YYYY-MM-DD"
     const d=new Date(s);
     if(!isNaN(d)) return d.toISOString().slice(0,10);
-    // try manual MM/DD/YY
     const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if(m){
       const y = m[3].length===2 ? ("20"+m[3]) : m[3];
@@ -195,7 +188,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return parts.length? parts.join(" ") : null;
   }
 
-  // ====== DOCX unzip + simple SDT extraction ======
   async function parseDocxArrayBuffer(ab){
     const zip = await JSZip.loadAsync(ab);
     const f = zip.file("word/document.xml");
@@ -236,32 +228,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  // ====== Render Preview with friendly labels / controls ======
   function renderEditablePreview(fields){
     const el = $("#preview");
-
-    // Working copy
     editedFields = {};
-
-    // Build in required order, excluding IGNORED and missing keys
-    const keys = FIELD_ORDER.filter(k => !IGNORED.has(k) && (k in fields || k==="PM_Lead")); // PM_Lead always shown
+    const keys = FIELD_ORDER.filter(k => !IGNORED.has(k) && (k in fields));
     if(!keys.length){ el.classList.add("kv-empty"); el.innerHTML="No fields extracted yet."; return; }
     el.classList.remove("kv-empty");
-
-    // Seed defaults
-    keys.forEach(k=>{
-      if(k==="PM_Lead") editedFields[k] = ""; // new blank field
-      else editedFields[k] = fields[k] ?? "";
-    });
-
-    // Normalized date/time for controls
+    keys.forEach(k=>{ editedFields[k] = fields[k] ?? ""; });
     const normD = normDate(editedFields.Due_Date) || "";
     const normT = parseTimeToHHMM(editedFields.Due_Time) || "";
-
     const rowsHtml = keys.map(key=>{
       const label = LABELS[key] || key;
-
-      // Due Date
       if(key==="Due_Date"){
         return `
         <div class="row">
@@ -269,15 +246,12 @@ document.addEventListener("DOMContentLoaded", () => {
           <div><input id="dueDate" type="date" class="date-input" value="${normD}" /></div>
         </div>`;
       }
-
-      // Due Time + toggle
       if(key==="Due_Time"){
         const isOn = !!normT;
         const hh = isOn ? normT.split(":")[0] : "";
         const mm = isOn ? normT.split(":")[1] : "";
         const hours = Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
         const minutes = ["00","30"];
-
         return `
         <div class="row">
           <div class="key">${label}</div>
@@ -297,8 +271,6 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>`;
       }
-
-      // Group -> status06 (restricted options)
       if(key==="Group"){
         const pre = mapGroupToStatusLabel(editedFields[key]) || "";
         return `
@@ -312,8 +284,6 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>`;
       }
-
-      // Standard inputs
       const val = (editedFields[key]??"").toString().replace(/"/g,"");
       return `
       <div class="row">
@@ -321,26 +291,19 @@ document.addEventListener("DOMContentLoaded", () => {
         <div><input class="input" data-key="${key}" value="${val}"></div>
       </div>`;
     }).join("");
-
     el.innerHTML = rowsHtml;
-
-    // Wire generic text inputs
     el.querySelectorAll("input.input").forEach(inp=>{
       inp.addEventListener("input", e=>{
         const k = e.target.getAttribute("data-key");
         editedFields[k] = e.target.value;
       });
     });
-
-    // Date
     const dueDateEl = $("#dueDate");
     if(dueDateEl){
       dueDateEl.addEventListener("input", e=>{
-        editedFields.Due_Date = e.target.value; // already yyyy-MM-dd
+        editedFields.Due_Date = e.target.value;
       });
     }
-
-    // Time
     const tToggle = $("#timeToggle");
     const tHH = $("#timeHH");
     const tMM = $("#timeMM");
@@ -368,41 +331,35 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
     });
-
-    // Group select
     const gSel = $("#groupSelect");
     if(gSel){
       gSel.addEventListener("change", e=>{
         editedFields.__GroupStatus = e.target.value || "";
       });
-      // seed internal field for later mapping
       editedFields.__GroupStatus = gSel.value || "";
     }
   }
 
   async function buildColumnValuesFromEdited(fields){
     const vals = {};
-
-    // Title
     pendingName = buildTitle(fields) || null;
-
-    // date6 (date + optional time)
     const dateIso = normDate(fields.Due_Date);
     const hhmm = parseTimeToHHMM(fields.Due_Time);
     if(dateIso){
       vals["date6"] = hhmm ? { date:dateIso, time:hhmm } : { date:dateIso };
     }
-
-    // status06 (Group)
     const chosen = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
     if(chosen && allowedGroupLabels.includes(chosen)){
       vals["status06"] = { label: chosen };
     }
-
-    // Other mapped columns
-    for(const k in mapping){
+    for(const k of Object.keys(mapping)){
       const m = mapping[k];
-      const v = fields[k];
+      let v = fields[k];
+      if(k==="EST"){
+        const parts = [fields.Team_Est1,fields.Team_Est2,fields.Team_Est3,fields.Team_Est4].filter(x=>x&&String(x).trim()!=="").map(x=>String(x).trim());
+        if(parts.length) v = parts.join(" / ");
+      }
+      if(k==="Lead" && fields.Lead) v = fields.Lead;
       if(v==null || v==="") continue;
       if(m.type==="text"){ vals[m.columnId] = v; }
       else if(m.type==="numbers"){
@@ -410,12 +367,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if(!isNaN(n)) vals[m.columnId] = String(n);
       }
     }
+    if(fields.Lead && mapping.Lead){ vals[mapping.Lead.columnId] = fields.Lead; }
     return vals;
   }
 
-  // ====== Apply to Monday with JSON variable (fixes validation error) ======
   async function applyToMonday(columnValues){
-    // 1) Change columns
     const mutation = `
       mutation($boardId:Int!,$itemId:Int!,$column_values:JSON!){
         change_multiple_column_values(board_id:$boardId,item_id:$itemId,column_values:$column_values){ id }
@@ -424,22 +380,18 @@ document.addEventListener("DOMContentLoaded", () => {
       variables:{
         boardId: Number(boardId),
         itemId: Number(itemId),
-        column_values: columnValues  // pass object, not string
+        column_values: JSON.stringify(columnValues)
       }
     });
     if(res.errors && res.errors.length){
       throw new Error(res.errors.map(e=>e.message).join("; "));
     }
-
-    // 2) Update name if needed
     if(pendingName){
-      // try change_simple_column_value first
       const m2 = `mutation($itemId:Int!,$val:String!){
         change_simple_column_value(item_id:$itemId,column_id:"name",value:$val){ id }
       }`;
-      const r2 = await monday.api(m2,{ variables:{ itemId:Number(itemId), val: JSON.stringify(pendingName) }});
+      const r2 = await monday.api(m2,{ variables:{ itemId:Number(itemId), val: pendingName }});
       if(r2.errors && r2.errors.length){
-        // fallback
         const m3 = `mutation($itemId:Int!,$name:String!){
           change_item_name(item_id:$itemId,name:$name){ id }
         }`;
@@ -451,7 +403,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ====== Monday context/theme ======
   monday.listen("context",(res)=>{
     ctx=res.data||{}; itemId=ctx.itemId; boardId=ctx.boardId;
     $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`
@@ -461,7 +412,6 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#theme-pill").innerText=`Theme: ${theme}`;
   });
 
-  // ====== UI events ======
   const dz = $("#dropzone"), fi = $("#fileinput");
   $("#choose").onclick=()=>fi.click();
   fi.addEventListener("change",e=>{
@@ -482,11 +432,8 @@ document.addEventListener("DOMContentLoaded", () => {
     try{
       if(!editedFields || Object.keys(editedFields).length===0) return setMsg("Nothing to apply");
       setMsg("Building updates…");
-
-      // Remove ignored keys from working view
       const working = {};
       Object.keys(editedFields).forEach(k=>{ if(!IGNORED.has(k)) working[k]=editedFields[k]; });
-
       const columnValues = await buildColumnValuesFromEdited(working);
       if(Object.keys(columnValues).length===0 && !buildTitle(working)){
         return setMsg("Nothing mappable found");
@@ -504,14 +451,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const xml = await parseDocxArrayBuffer(ab);
       setMsg("Parsing fields…");
       rawFields = extractSdtWithDOM(xml);
-
-      // Rename incoming keys to our UI keys if needed
       const view = {};
       FIELD_ORDER.forEach(k=>{
-        if(k==="PM_Lead"){ view[k]=""; return; } // always present blank
         if(k in rawFields) view[k] = rawFields[k];
       });
-
+      if(rawFields.Team_Final) view.Lead = rawFields.Team_Final;
+      if(rawFields.Team_Lead) view.PM = rawFields.Team_Lead;
+      const estParts = [rawFields.Team_Est1,rawFields.Team_Est2,rawFields.Team_Est3,rawFields.Team_Est4].filter(x=>x&&String(x).trim()!=="").map(x=>String(x).trim());
+      if(estParts.length) view.EST = estParts.join(" / ");
       renderEditablePreview(view);
       $("#apply").disabled = false;
       setMsg("Ready to apply");
