@@ -137,7 +137,6 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const IGNORED = new Set(["Name_Requester","Date_Request","Deliv_Format"]);
-
   const allowedGroupLabels = ["SPC","ENG","MAJ"];
 
   function mapGroupToStatusLabel(v){
@@ -340,18 +339,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function isDateColumnTimeEnabled(bid, colId){
+    const q = `query($bid:[ID!],$cid:[String!]){
+      boards(ids:$bid){ columns(ids:$cid){ id settings_str } }
+    }`;
+    const r = await monday.api(q, { variables:{ bid:[bid], cid:[colId] }});
+    const s = r?.data?.boards?.[0]?.columns?.[0]?.settings_str;
+    try { return !!(s && JSON.parse(s).time); } catch { return false; }
+  }
+
   async function buildColumnValuesFromEdited(fields){
     const vals = {};
     pendingName = buildTitle(fields) || null;
+
     const dateIso = normDate(fields.Due_Date);
     const hhmm = parseTimeToHHMM(fields.Due_Time);
     if(dateIso){
-      vals["date6"] = hhmm ? { date:dateIso, time:hhmm } : { date:dateIso };
+      let withTime = false;
+      if(hhmm){
+        try { withTime = await isDateColumnTimeEnabled(boardId, "date6"); } catch { withTime = false; }
+      }
+      vals["date6"] = withTime ? { date:dateIso, time:hhmm } : { date:dateIso };
     }
+
     const chosen = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
     if(chosen && allowedGroupLabels.includes(chosen)){
       vals["status06"] = { label: chosen };
     }
+
     for(const k of Object.keys(mapping)){
       const m = mapping[k];
       let v = fields[k];
@@ -372,47 +387,47 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function applyToMonday(columnValues){
-  const mutation = `
-    mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
-      change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
-    }`;
-  const res = await monday.api(mutation, {
-    variables:{
-      boardId,               // already a string from the context listener
-      itemId,                // already a string from the context listener
-      column_values: JSON.stringify(columnValues) // JSON scalar must be a string
-    }
-  });
-  if(res.errors && res.errors.length){
-    throw new Error(res.errors.map(e=>e.message).join("; "));
-  }
-
-  if(pendingName){
-    // value for name is a plain String
-    const m2 = `mutation($itemId: ID!, $val: String!){
-      change_simple_column_value(item_id:$itemId, column_id:"name", value:$val){ id }
-    }`;
-    const r2 = await monday.api(m2,{ variables:{ itemId, val: pendingName }});
-    if(r2.errors && r2.errors.length){
-      const m3 = `mutation($itemId: ID!, $name: String!){
-        change_item_name(item_id:$itemId, name:$name){ id }
+    const mutation = `
+      mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
+        change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
       }`;
-      const r3 = await monday.api(m3,{ variables:{ itemId, name: pendingName }});
-      if(r3.errors && r3.errors.length){
-        throw new Error("change_item_name: " + r3.errors.map(e=>e.message).join("; "));
+    const res = await monday.api(mutation, {
+      variables:{
+        boardId,
+        itemId,
+        column_values: JSON.stringify(columnValues)
+      }
+    });
+    if(res.errors && res.errors.length){
+      throw new Error(res.errors.map(e=>e.message).join("; "));
+    }
+    if(pendingName){
+      const m2 = `mutation($itemId: ID!, $val: String!){
+        change_simple_column_value(item_id:$itemId, column_id:"name", value:$val){ id }
+      }`;
+      const r2 = await monday.api(m2,{ variables:{ itemId, val: pendingName }});
+      if(r2.errors && r2.errors.length){
+        const m3 = `mutation($itemId: ID!, $name: String!){
+          change_item_name(item_id:$itemId, name:$name){ id }
+        }`;
+        const r3 = await monday.api(m3,{ variables:{ itemId, name: pendingName }});
+        if(r3.errors && r3.errors.length){
+          throw new Error("change_item_name: " + r3.errors.map(e=>e.message).join("; "));
+        }
       }
     }
   }
-}
 
   monday.listen("context",(res)=>{
-  const c = res.data || {};
-  // force to string since GraphQL wants ID
-  itemId = c.itemId != null ? String(c.itemId) : null;
-  boardId = c.boardId != null ? String(c.boardId) : null;
-  $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`
-});
-
+    const c=res.data||{};
+    itemId = c.itemId!=null ? String(c.itemId) : null;
+    boardId = c.boardId!=null ? String(c.boardId) : null;
+    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`
+  });
+  monday.listen("theme",(res)=>{
+    const theme=res.data?.theme||"auto";
+    $("#theme-pill").innerText=`Theme: ${theme}`;
+  });
 
   const dz = $("#dropzone"), fi = $("#fileinput");
   $("#choose").onclick=()=>fi.click();
