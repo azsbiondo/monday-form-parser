@@ -47,7 +47,11 @@ body{
 @media (max-width:900px){.body{grid-template-columns:1fr}}
 .card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:14px;padding:14px;min-height:180px}
 .card h2{font-size:14px;margin:0 0 10px 0;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
-.drop{display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;transition:border-color .2s ease,background .2s ease}
+.drop{
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  border:2px dashed var(--border);border-radius:14px;height:156px;padding:10px;
+  transition:border-color .2s ease,background .2s ease; cursor:pointer; user-select:none;
+}
 .drop.k{border-color:var(--accent-2);background:rgba(36,70,142,.06)}
 .preview{max-height:340px;overflow:auto}
 .row{display:grid;grid-template-columns:220px 1fr;gap:10px;padding:8px;border-bottom:1px dashed var(--border);align-items:center}
@@ -92,7 +96,7 @@ select option{color:var(--text);background:var(--bg)}
     <div class="body">
       <div class="card">
         <h2>Dropzone</h2>
-        <div id="dropzone" class="drop">Drag and drop the Estimate Engagement form here.</div>
+        <div id="dropzone" class="drop" tabindex="0">Drag & drop the Estimate Engagement form here — or click to choose.</div>
         <input id="fileinput" type="file" accept=".docx" style="display:none" />
       </div>
       <div class="card">
@@ -106,7 +110,9 @@ select option{color:var(--text);background:var(--bg)}
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const monday = mondaySdk();
+  console.log("[Init] DOMContentLoaded");
+  let monday;
+  try { monday = mondaySdk(); } catch(e){ console.error("[Init] mondaySdk() failed", e); }
 
   // Column mapping
   const mapping = {
@@ -117,7 +123,6 @@ document.addEventListener("DOMContentLoaded", () => {
     "EST":           { type:"text",    columnId:"text8" }
   };
 
-  // UI order (Lead/PM/EST after Value)
   const FIELD_ORDER = [
     "ENumber","Name_Client","Name_Project",
     "Due_Date","Due_Time","Group",
@@ -151,7 +156,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  // Treat literal "name" as placeholder
   function isPlaceholderName(v){ return v && String(v).trim().toLowerCase() === "name"; }
 
   // State
@@ -160,8 +164,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // DOM helpers
   const $ = sel => document.querySelector(sel);
-  const setMsg = t => $("#msg").innerText = t || "";
-  function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error");setMsg(label+": "+msg);console.error(label,e)}
+  const setMsg = t => { const m=$("#msg"); if(m) m.innerText = t || ""; };
+  function showErr(e,label){const msg=(e&&e.message)?e.message:String(e||"Unknown error"); setMsg(label+": "+msg); console.error(label,e);}
 
   // Normalizers
   function normText(s){return (s||"").trim()}
@@ -189,14 +193,14 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
   }
 
-  // Item name builder
+  // Title builder
   function buildTitle(fields){
     const a=normText(fields.ENumber), b=normText(fields.Name_Client), c=normText(fields.Name_Project);
     const parts=[a,b,c].filter(Boolean);
     return parts.length? parts.join(" ") : null;
   }
 
-  // DOCX unzip + SDT extraction (w:tag / w:alias)
+  // DOCX unzip + SDT extraction
   async function parseDocxArrayBuffer(ab){
     const zip = await JSZip.loadAsync(ab);
     const f = zip.file("word/document.xml");
@@ -240,6 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // UI renderer
   function renderEditablePreview(fields){
     const el = $("#preview");
+    if(!el){ console.warn("[UI] preview element missing"); return; }
     editedFields = {};
     const keys = FIELD_ORDER.filter(k => !IGNORED.has(k) && (k in fields));
     if(!keys.length){ el.classList.add("kv-empty"); el.innerHTML="No fields extracted yet."; return; }
@@ -296,6 +301,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     el.innerHTML = rowsHtml;
 
+    // Wire inputs
     el.querySelectorAll("input.input").forEach(inp=>{
       inp.addEventListener("input", e=>{
         const k = e.target.getAttribute("data-key");
@@ -345,32 +351,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Build GraphQL payload (now uses fields.EST if present)
+  // Build payload (keeps EST and retry-on-date-time)
   async function buildColumnValuesFromEdited(fields){
     const vals = {};
 
-    // Title
     pendingName = buildTitle(fields) || null;
 
-    // Date — always include time if provided; we’ll retry without time if Monday rejects it
     const dateIso = normDate(fields.Due_Date);
     const hhmm = parseTimeToHHMM(fields.Due_Time);
     if(dateIso){
       vals["date6"] = hhmm ? { date:dateIso, time:hhmm } : { date:dateIso };
     }
 
-    // Group (Status)
     const chosen = fields.__GroupStatus || mapGroupToStatusLabel(fields.Group);
     if(chosen && allowedGroupLabels.includes(chosen)){
       vals["status06"] = { label: chosen };
     }
 
-    // Text/Numbers
     for(const k of Object.keys(mapping)){
       const m = mapping[k];
       let v = fields[k];
 
-      // EST: prefer the already-joined UI value; rebuild only if blank
       if(k==="EST"){
         if(!v){
           const arr = [fields.Team_Est1,fields.Team_Est2,fields.Team_Est3,fields.Team_Est4]
@@ -379,23 +380,13 @@ document.addEventListener("DOMContentLoaded", () => {
           v = arr.length ? arr.join(" / ") : "";
         }
       }
-
-      // PM: prefer Team_PM else Team_Lead; skip placeholders (only if UI field empty)
       if(k==="PM" && !v){
         const pmRaw = (fields.Team_PM && !isPlaceholderName(fields.Team_PM)) ? fields.Team_PM
                     : ((fields.Team_Lead && !isPlaceholderName(fields.Team_Lead)) ? fields.Team_Lead : "");
         v = pmRaw || "";
       }
-
-      // Lead: take provided Lead if present
-      if(k==="Lead"){
-        v = fields.Lead || v || "";
-      }
-
-      // Lead overrides Assigned_Lead’s target column
-      if(k==="Assigned_Lead" && fields.Lead){
-        continue;
-      }
+      if(k==="Lead"){ v = fields.Lead || v || ""; }
+      if(k==="Assigned_Lead" && fields.Lead){ continue; }
 
       if(v==null || v==="") continue;
 
@@ -407,7 +398,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Redundant safeguard: ensure Lead wins
     if(fields.Lead && mapping.Lead){
       vals[mapping.Lead.columnId] = fields.Lead;
     }
@@ -415,72 +405,48 @@ document.addEventListener("DOMContentLoaded", () => {
     return vals;
   }
 
-  // Mutations (with date-time retry fallback)
-async function applyToMonday(columnValues){
-  // helper: call mutation and normalize both throw-style and return-style errors
-  const sendOnce = async (cols) => {
-    const mutation = `
-      mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
-        change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
-      }`;
-    try {
-      const res = await monday.api(mutation, {
-        variables:{ boardId, itemId, column_values: JSON.stringify(cols) }
-      });
-      if (res?.errors?.length) {
-        return { ok:false, err:res.errors, data:res };
+  // Mutation with retry for date-time
+  async function applyToMonday(columnValues){
+    const sendOnce = async (cols) => {
+      const mutation = `
+        mutation($boardId: ID!, $itemId: ID!, $column_values: JSON!){
+          change_multiple_column_values(board_id:$boardId, item_id:$itemId, column_values:$column_values){ id }
+        }`;
+      try {
+        const res = await monday.api(mutation, {
+          variables:{ boardId, itemId, column_values: JSON.stringify(cols) }
+        });
+        if (res?.errors?.length) return { ok:false, err:res.errors, data:res };
+        return { ok:true, err:null, data:res };
+      } catch (e) {
+        const errList = e?.errors || e?.data?.errors || [{ message: e?.message || "Unknown error" }];
+        return { ok:false, err:errList, data:null };
       }
-      return { ok:true, err:null, data:res };
-    } catch (e) {
-      // SDK threw; try to pull GraphQL errors if present
-      const errList = e?.errors || e?.data?.errors || [{ message: e?.message || "Unknown error" }];
-      return { ok:false, err:errList, data:null };
-    }
-  };
+    };
 
-  const isDateValueError = (errs) => {
-    const txt = JSON.stringify(errs||[]);
-    return /ColumnValueException/i.test(txt) || /invalid value/i.test(txt) && /"column_type":"date"/i.test(txt);
-  };
+    const isDateValueError = (errs) => {
+      const txt = JSON.stringify(errs||[]);
+      return (/ColumnValueException/i.test(txt) || /invalid value/i.test(txt)) && /"column_type":"date"/i.test(txt);
+    };
 
-  // 1) First attempt — possibly includes time
-  let attemptCols = columnValues;
-  let r = await sendOnce(attemptCols);
+    let r = await sendOnce(columnValues);
 
-  // 2) If it failed *and* looks like a date-with-time rejection, retry once with date-only
-  if (!r.ok && isDateValueError(r.err)) {
-    if (attemptCols.date6 && attemptCols.date6.date) {
-      const retryCols = { ...attemptCols, date6: { date: attemptCols.date6.date } };
-      console.warn("Date column rejected time; retrying with date only…", retryCols.date6);
-      setMsg("Date time not accepted by column settings; retrying with date only…");
-      r = await sendOnce(retryCols);
-    }
-  }
-
-  if (!r.ok) {
-    // still failing → surface the real error(s)
-    const msg = (r.err||[]).map(e => e.message || String(e)).join("; ");
-    throw new Error(msg || "GraphQL error");
-  }
-
-  // 3) Rename via name column (requires board_id)
-  if (pendingName){
-    const m2 = `mutation($boardId: ID!, $itemId: ID!, $val: String!){
-      change_simple_column_value(board_id:$boardId, item_id:$itemId, column_id:"name", value:$val){ id }
-    }`;
-    const r2 = await monday.api(m2,{ variables:{ boardId, itemId, val: pendingName }});
-    if(r2.errors && r2.errors.length){
-      throw new Error(r2.errors.map(e=>e.message).join("; "));
-    }
-  }
-}
-
-    if(res.errors && res.errors.length){
-      throw new Error(res.errors.map(e=>e.message).join("; "));
+    if (!r.ok && isDateValueError(r.err)) {
+      if (columnValues.date6 && columnValues.date6.date) {
+        const retryCols = { ...columnValues, date6: { date: columnValues.date6.date } };
+        console.warn("[GraphQL] Date rejected time; retrying with date only…", retryCols.date6);
+        setMsg("Date time not accepted by column settings; retrying with date only…");
+        r = await sendOnce(retryCols);
+      }
     }
 
-    // Rename via name column (requires board_id)
-    if(pendingName){
+    if (!r.ok) {
+      const msg = (r.err||[]).map(e => e.message || String(e)).join("; ");
+      throw new Error(msg || "GraphQL error");
+    }
+
+    // Rename
+    if (pendingName){
       const m2 = `mutation($boardId: ID!, $itemId: ID!, $val: String!){
         change_simple_column_value(board_id:$boardId, item_id:$itemId, column_id:"name", value:$val){ id }
       }`;
@@ -491,58 +457,82 @@ async function applyToMonday(columnValues){
     }
   }
 
-  // Context & theme
-  monday.listen("context",(res)=>{
-    const c=res.data||{};
-    itemId = c.itemId!=null ? String(c.itemId) : null;
-    boardId = c.boardId!=null ? String(c.boardId) : null;
-    $("#ctx-pill").innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`
-  });
-  monday.listen("theme",(res)=>{
-    const theme=res.data?.theme||"auto";
-    $("#theme-pill").innerText=`Theme: ${theme}`;
-  });
+  // Context & theme listeners (guarded)
+  try{
+    if(monday){
+      monday.listen("context",(res)=>{
+        const c=res.data||{};
+        itemId = c.itemId!=null ? String(c.itemId) : null;
+        boardId = c.boardId!=null ? String(c.boardId) : null;
+        const pill=$("#ctx-pill");
+        if(pill) pill.innerText=`Board: ${boardId||"—"} | Item: ${itemId||"—"}`;
+        console.log("[Context] boardId:", boardId, "itemId:", itemId);
+      });
+      monday.listen("theme",(res)=>{
+        const theme=res.data?.theme||"auto";
+        const pill=$("#theme-pill"); if(pill) pill.innerText=`Theme: ${theme}`;
+      });
+    }
+  }catch(e){ console.error("[Init] monday.listen failed", e); }
 
-  // UI events
-  const dz = $("#dropzone"), fi = $("#fileinput");
-  $("#choose").onclick=()=>fi.click();
+  // UI events — defensively wired
+  const dz = $("#dropzone"), fi = $("#fileinput"), chooseBtn = $("#choose"), applyBtn = $("#apply");
+  if(chooseBtn && fi){
+    chooseBtn.addEventListener("click", ()=>{
+      try{ fi.click(); }catch(e){ console.error("[UI] fileinput.click failed", e); }
+    });
+  }
+  if(dz && fi){
+    // Click to open picker
+    dz.addEventListener("click", ()=> { try{ fi.click(); }catch(e){ console.error("[UI] dropzone click -> fileinput.click failed", e); }});
+    dz.addEventListener("keydown", (e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); try{ fi.click(); }catch(err){ console.error(err); } }});
+    // DnD
+    ["dragenter","dragover"].forEach(evt=>{
+      dz.addEventListener(evt, e=>{ e.preventDefault(); e.stopPropagation(); dz.classList.add("k"); });
+    });
+    ["dragleave","drop"].forEach(evt=>{
+      dz.addEventListener(evt, e=>{ e.preventDefault(); e.stopPropagation(); dz.classList.remove("k"); });
+    });
+    dz.addEventListener("drop", e=>{
+      try{
+        const f=e.dataTransfer?.files?.[0];
+        if(!f){ setMsg("No file dropped"); return; }
+        if(!/\.docx$/i.test(f.name)){ setMsg("Please drop a .docx file"); return; }
+        handleLocalFile(f);
+      }catch(err){ showErr(err,"Drop failed"); }
+    });
+  } else {
+    console.warn("[UI] dropzone or fileinput missing; drag/drop disabled");
+  }
 
-  fi.addEventListener("change",e=>{
-    const f=e.target.files?.[0];
-    if(f && /\.docx$/i.test(f.name)) handleLocalFile(f);
-    else setMsg("Please choose a .docx");
-  });
-  dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("k")});
-  dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("k")});
-  dz.addEventListener("drop",e=>{
-    e.preventDefault(); dz.classList.remove("k");
-    const f=e.dataTransfer.files?.[0];
-    if(!f) return setMsg("No file dropped");
-    if(!/\.docx$/i.test(f.name)) return setMsg("Please drop a .docx file");
-    handleLocalFile(f);
-  });
+  if(fi){
+    fi.addEventListener("change", e=>{
+      try{
+        const f=e.target.files?.[0];
+        if(f && /\.docx$/i.test(f.name)) handleLocalFile(f);
+        else setMsg("Please choose a .docx");
+      }catch(err){ showErr(err,"File choose failed"); }
+    });
+  }
 
-  $("#apply").onclick = async () => {
-    try{
-      if(!editedFields || Object.keys(editedFields).length===0) return setMsg("Nothing to apply");
-      setMsg("Building updates…");
-
-      const working = {};
-      Object.keys(editedFields).forEach(k=>{ if(!IGNORED.has(k)) working[k]=editedFields[k]; });
-
-      const columnValues = await buildColumnValuesFromEdited(working);
-      if(Object.keys(columnValues).length===0 && !buildTitle(working)){
-        return setMsg("Nothing mappable found");
-      }
-
-      // Debug: see exactly what we send
-      console.log("Outgoing columnValues:", JSON.stringify(columnValues, null, 2));
-
-      setMsg("Updating item…");
-      await applyToMonday(columnValues);
-      setMsg("Done");
-    }catch(e){ showErr(e,"Update failed"); }
-  };
+  if(applyBtn){
+    applyBtn.addEventListener("click", async ()=>{
+      try{
+        if(!editedFields || Object.keys(editedFields).length===0){ setMsg("Nothing to apply"); return; }
+        setMsg("Building updates…");
+        const working = {};
+        Object.keys(editedFields).forEach(k=>{ if(!IGNORED.has(k)) working[k]=editedFields[k]; });
+        const columnValues = await buildColumnValuesFromEdited(working);
+        if(Object.keys(columnValues).length===0 && !buildTitle(working)){
+          setMsg("Nothing mappable found"); return;
+        }
+        console.log("Outgoing columnValues:", JSON.stringify(columnValues, null, 2));
+        setMsg("Updating item…");
+        await applyToMonday(columnValues);
+        setMsg("Done");
+      }catch(e){ showErr(e,"Update failed"); }
+    });
+  }
 
   // Local file handler
   async function handleLocalFile(file){
@@ -559,27 +549,26 @@ async function applyToMonday(columnValues){
       // Lead
       if(rawFields.Team_Final && !isPlaceholderName(rawFields.Team_Final)) {
         view.Lead = rawFields.Team_Final;
-      } else {
-        view.Lead = "";
-      }
+      } else { view.Lead = ""; }
 
-      // PM: Team_PM else Team_Lead (skip placeholders)
+      // PM
       const pmPref = (rawFields.Team_PM && !isPlaceholderName(rawFields.Team_PM)) ? rawFields.Team_PM
                    : ((rawFields.Team_Lead && !isPlaceholderName(rawFields.Team_Lead)) ? rawFields.Team_Lead : "");
       view.PM = pmPref || "";
 
-      // EST: join 1..4, skipping blanks and literal "name"
+      // EST
       const estParts = [rawFields.Team_Est1,rawFields.Team_Est2,rawFields.Team_Est3,rawFields.Team_Est4]
         .filter(x=>x && String(x).trim()!=="" && !isPlaceholderName(x))
         .map(x=>String(x).trim());
       view.EST = estParts.length ? estParts.join(" / ") : "";
 
       renderEditablePreview(view);
-      $("#apply").disabled = false;
+      if(applyBtn) applyBtn.disabled = false;
       setMsg("Ready to apply");
     }catch(e){ showErr(e,"Could not read .docx"); }
   }
 
+  // Global error guard
   window.addEventListener("error",(e)=>showErr(e.error||e.message,"Script error"));
 });
 </script>
